@@ -1,7 +1,9 @@
 import { NestFactory } from '@nestjs/core'
 import { NestExpressApplication } from '@nestjs/platform-express'
 import cookieParser from 'cookie-parser'
+import { join } from 'path'
 import { AppModule } from './app.module'
+import { createCustomValidationPipe } from './common/pipes/custom-validation.pipe'
 
 async function bootstrap() {
 	const app = await NestFactory.create<NestExpressApplication>(AppModule)
@@ -13,13 +15,13 @@ async function bootstrap() {
 		credentials: true,
 	})
 
-	// app.useStaticAssets(join(process.cwd(), 'public'), {
-	// 	prefix: '/',
-	// })
+	app.useStaticAssets(join(process.cwd(), 'public'), {
+		prefix: '/',
+	})
 
 	app.setGlobalPrefix('api/v1')
 
-	// app.useGlobalPipes(createCustomValidationPipe())
+	app.useGlobalPipes(createCustomValidationPipe())
 
 	await app.listen(process.env.PORT ?? 5555)
 }
