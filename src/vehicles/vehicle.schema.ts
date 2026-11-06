@@ -57,8 +57,9 @@ export class Vehicle {
 	seats!: number
 
 	@Prop({
+		type: String,
+		ref: 'City',
 		required: true,
-		trim: true,
 	})
 	city!: string
 

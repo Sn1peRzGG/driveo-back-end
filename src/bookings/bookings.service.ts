@@ -8,6 +8,11 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model } from 'mongoose'
 import { User, UserDocument } from '../users/user.schema'
 import { Vehicle, VehicleDocument } from '../vehicles/vehicle.schema'
+import { City, CityDocument } from '../cities/city.schema'
+import {
+	OneWayFee,
+	OneWayFeeDocument,
+} from '../one-way-fees/one-way-fee.schema'
 import { Booking, BookingDocument, BookingStatus } from './booking.schema'
 import { CreateBookingDto } from './dto/create-booking.dto'
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto'
@@ -18,7 +23,19 @@ export class BookingsService {
 		@InjectModel(Booking.name) private bookingModel: Model<BookingDocument>,
 		@InjectModel(Vehicle.name) private vehicleModel: Model<VehicleDocument>,
 		@InjectModel(User.name) private userModel: Model<UserDocument>,
+		@InjectModel(City.name) private cityModel: Model<CityDocument>,
+		@InjectModel(OneWayFee.name)
+		private oneWayFeeModel: Model<OneWayFeeDocument>,
 	) {}
+
+	private normalizeDate(dateString: string): Date {
+		const date = new Date(dateString)
+		if (isNaN(date.getTime())) {
+			throw new BadRequestException(`Invalid date format: ${dateString}`)
+		}
+		date.setUTCHours(0, 0, 0, 0)
+		return date
+	}
 
 	async create(
 		createBookingDto: CreateBookingDto,
@@ -28,23 +45,47 @@ export class BookingsService {
 			vehicleId,
 			startDate,
 			endDate,
-			pickupLocation,
-			returnLocation,
+			pickupCity,
+			returnCity,
 			phoneNumber,
 		} = createBookingDto
 
-		const start = new Date(startDate)
-		const end = new Date(endDate)
+		const start = this.normalizeDate(startDate)
+		const end = this.normalizeDate(endDate)
+		const today = new Date()
+		today.setUTCHours(0, 0, 0, 0)
 
-		if (start >= end) {
-			throw new BadRequestException('End date must be greater than start date')
+		if (start < today) {
+			throw new BadRequestException('Start date cannot be in the past')
 		}
 
-		const vehicle = await this.vehicleModel.findById(vehicleId)
+		if (start >= end) {
+			throw new BadRequestException(
+				'End date must be strictly after start date',
+			)
+		}
+
+		const vehicle = await this.vehicleModel.findOne({
+			_id: vehicleId,
+			isDeleted: false,
+		} as any)
+
 		if (!vehicle || !vehicle.isAvailable) {
 			throw new NotFoundException(
-				`Vehicle with ID ${vehicleId} not found or unavailable`,
+				`Vehicle with ID ${vehicleId} not found or unavailable for rental`,
 			)
+		}
+
+		if (pickupCity !== vehicle.city) {
+			throw new BadRequestException('Pickup city must match the vehicle city')
+		}
+		if (!(await this.cityModel.exists({ _id: returnCity } as any))) {
+			throw new NotFoundException('Return city not found')
+		}
+
+		const user = await this.userModel.findById(userId)
+		if (!user) {
+			throw new NotFoundException('User not found')
 		}
 
 		const overlappingBooking = await this.bookingModel.findOne({
@@ -61,26 +102,38 @@ export class BookingsService {
 		})
 
 		if (overlappingBooking) {
-			throw new BadRequestException('Vehicle is already booked for these dates')
+			throw new BadRequestException(
+				'Vehicle is already booked for one or more dates in the selected range',
+			)
 		}
 
 		const diffTime = Math.abs(end.getTime() - start.getTime())
-		const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1
-		const totalPrice = Number((vehicle.pricePerDay * diffDays).toFixed(2))
-
-		const user = await this.userModel.findById(userId)
-		if (!user) {
-			throw new NotFoundException('User not found')
+		const rentalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+		const isOneWayRental = returnCity !== vehicle.city
+		const routeFee = isOneWayRental
+			? await this.oneWayFeeModel
+					.findOne({ originCity: vehicle.city, destinationCity: returnCity })
+					.lean()
+			: null
+		if (isOneWayRental && !routeFee) {
+			throw new BadRequestException(
+				'No one-way fee is configured for this route',
+			)
 		}
+		const oneWayFee = routeFee?.fee ?? 0
+		const totalPrice = Number(
+			(vehicle.pricePerDay * rentalDays + oneWayFee).toFixed(2),
+		)
 
 		const newBooking = new this.bookingModel({
 			user: userId,
 			vehicle: vehicleId,
 			startDate: start,
 			endDate: end,
-			pickupLocation,
-			returnLocation,
+			pickupCity: vehicle.city,
+			returnCity,
 			totalPrice,
+			oneWayFee,
 			phoneNumber,
 			status: BookingStatus.PENDING,
 		})
@@ -91,9 +144,7 @@ export class BookingsService {
 	async getUserBookings(userId: string): Promise<Booking[]> {
 		return this.bookingModel
 			.find({ user: userId })
-			.populate('vehicle')
-			.populate('pickupLocation')
-			.populate('returnLocation')
+			.populate(['vehicle', 'pickupCity', 'returnCity'])
 			.sort({ createdAt: -1 })
 			.exec()
 	}
@@ -102,9 +153,7 @@ export class BookingsService {
 		return this.bookingModel
 			.find()
 			.populate('user')
-			.populate('vehicle')
-			.populate('pickupLocation')
-			.populate('returnLocation')
+			.populate(['vehicle', 'pickupCity', 'returnCity'])
 			.sort({ createdAt: -1 })
 			.exec()
 	}
@@ -113,15 +162,43 @@ export class BookingsService {
 		id: string,
 		updateBookingStatusDto: UpdateBookingStatusDto,
 	): Promise<Booking> {
-		const booking = await this.bookingModel.findByIdAndUpdate(
-			id,
-			{ $set: { status: updateBookingStatusDto.status } },
-			{ returnDocument: 'after' },
-		)
+		const booking = await this.bookingModel.findById(id)
 		if (!booking) {
 			throw new NotFoundException(`Booking with ID ${id} not found`)
 		}
-		return booking
+
+		if (
+			updateBookingStatusDto.status === BookingStatus.COMPLETED &&
+			booking.status !== BookingStatus.COMPLETED
+		) {
+			const today = new Date()
+			today.setUTCHours(0, 0, 0, 0)
+			if (today < booking.endDate) {
+				throw new BadRequestException(
+					'Booking cannot be completed before its end date',
+				)
+			}
+		}
+
+		const shouldMoveVehicle =
+			updateBookingStatusDto.status === BookingStatus.COMPLETED &&
+			booking.status !== BookingStatus.COMPLETED &&
+			booking.pickupCity !== booking.returnCity
+
+		if (shouldMoveVehicle) {
+			const vehicle = await this.vehicleModel.findOne({
+				_id: booking.vehicle,
+				isDeleted: false,
+			} as any)
+			if (!vehicle) {
+				throw new NotFoundException('Vehicle not found')
+			}
+			vehicle.city = booking.returnCity
+			await vehicle.save()
+		}
+
+		booking.status = updateBookingStatusDto.status
+		return booking.save()
 	}
 
 	async cancelBooking(id: string, userId: string): Promise<Booking> {
@@ -130,13 +207,16 @@ export class BookingsService {
 			throw new NotFoundException(`Booking with ID ${id} not found`)
 		}
 
-		if (booking.user !== userId) {
+		if (booking.user.toString() !== userId.toString()) {
 			throw new ForbiddenException('You can only cancel your own bookings')
 		}
 
-		if (booking.status !== BookingStatus.PENDING) {
-			throw new ForbiddenException(
-				'Cannot cancel a booking after it has been confirmed or processed',
+		if (
+			booking.status !== BookingStatus.PENDING &&
+			booking.status !== BookingStatus.CONFIRMED
+		) {
+			throw new BadRequestException(
+				'Cannot cancel an active or already completed booking',
 			)
 		}
 
@@ -149,6 +229,6 @@ export class BookingsService {
 		if (!booking) {
 			throw new NotFoundException(`Booking with ID ${id} not found`)
 		}
-		return { message: 'Booking successfully deleted from database' }
+		return { message: 'Booking successfully deleted' }
 	}
 }

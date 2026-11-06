@@ -10,6 +10,7 @@ import { existsSync, mkdirSync } from 'fs'
 import * as fs from 'fs/promises'
 import { Model } from 'mongoose'
 import { extname, join } from 'path'
+import { Vehicle, VehicleDocument } from '../vehicles/vehicle.schema'
 import { Category, CategoryDocument } from './category.schema'
 import { CreateCategoryDto } from './dto/create-category.dto'
 import { UpdateCategoryDto } from './dto/update-category.dto'
@@ -19,6 +20,8 @@ export class CategoriesService {
 	constructor(
 		@InjectModel(Category.name)
 		private readonly categoryModel: Model<CategoryDocument>,
+		@InjectModel(Vehicle.name)
+		private readonly vehicleModel: Model<VehicleDocument>,
 	) {}
 
 	private readonly uploadPath = join(process.cwd(), 'public', 'categories')
@@ -39,7 +42,7 @@ export class CategoriesService {
 			const fullPath = join(process.cwd(), 'public', relativePath)
 			await fs.unlink(fullPath)
 		} catch {
-			// File deleted
+			return
 		}
 	}
 
@@ -108,6 +111,16 @@ export class CategoriesService {
 	}
 
 	async remove(id: string) {
+		const vehicleCount = await this.vehicleModel.countDocuments({
+			category: id,
+			isDeleted: false,
+		})
+		if (vehicleCount > 0) {
+			throw new ConflictException(
+				'Cannot delete a category that is assigned to active vehicles',
+			)
+		}
+
 		const category = await this.categoryModel.findByIdAndDelete(id)
 		if (!category)
 			throw new NotFoundException({ message: 'Category not found' })

@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { InjectModel } from '@nestjs/mongoose'
 import { PassportStrategy } from '@nestjs/passport'
 import { Request } from 'express'
@@ -8,21 +9,22 @@ import { User, UserDocument } from '../users/user.schema'
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-	constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {
+	constructor(
+		@InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+		private readonly configService: ConfigService,
+	) {
 		super({
-			jwtFromRequest: (req: Request) => {
-				if (req && req.cookies) {
-					return req.cookies['jwt']
-				}
-				return null
-			},
+			jwtFromRequest: (req: Request) =>
+				req?.cookies?.jwt ??
+				(req?.headers.authorization?.startsWith('Bearer ')
+					? req.headers.authorization.slice(7)
+					: null),
 			ignoreExpiration: false,
-			secretOrKey:
-				'28ddf7d7db3ee02c41c5d29ad2374b7b0e366daa1d23eb2bf3a4dee747d3af06',
+			secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
 		})
 	}
 
-	async validate(payload: any) {
+	async validate(payload: { sub: string }) {
 		const user = await this.userModel.findById(payload.sub).lean()
 
 		if (!user) {
@@ -31,6 +33,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
 		return {
 			_id: user._id,
+			email: user.email,
 			role: user.role,
 		}
 	}

@@ -36,12 +36,21 @@ export class UsersService {
 	private async deleteFile(path: string) {
 		try {
 			await fs.unlink(join(process.cwd(), 'public', path.replace(/^\/+/, '')))
-		} catch {}
+		} catch {
+			return
+		}
 	}
 
-	private sanitizeUser(user: any) {
-		const { password: _password, ...safeUser } =
-			user instanceof Model ? user.toObject() : user
+	private sanitizeUser(user: UserDocument | Record<string, unknown> | null) {
+		if (!user) return null
+		const source =
+			typeof (user as UserDocument).toObject === 'function'
+				? (user as UserDocument).toObject()
+				: user
+		const { password: _password, ...safeUser } = source as Record<
+			string,
+			unknown
+		>
 		return safeUser
 	}
 
@@ -128,6 +137,19 @@ export class UsersService {
 		const updateData: any = { ...dto }
 		if (dto.password) updateData.password = await bcrypt.hash(dto.password, 10)
 		if (dto.email) updateData.email = dto.email.toLowerCase()
+		if (dto.email && dto.email !== current.email) {
+			const emailExists = await this.userModel.exists({
+				email: updateData.email,
+			})
+			if (emailExists) throw new ConflictException('Email already exists')
+		}
+		if (dto.phoneNumber && dto.phoneNumber !== current.phoneNumber) {
+			const phoneExists = await this.userModel.exists({
+				phoneNumber: dto.phoneNumber,
+			})
+			if (phoneExists)
+				throw new ConflictException('Phone number already exists')
+		}
 
 		let avatarUrl = current.avatarUrl
 		try {

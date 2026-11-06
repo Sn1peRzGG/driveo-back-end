@@ -15,6 +15,13 @@ import {
 	UseInterceptors,
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
+import {
+	ApiBearerAuth,
+	ApiConsumes,
+	ApiOperation,
+	ApiResponse,
+	ApiTags,
+} from '@nestjs/swagger'
 import { Request } from 'express'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 import { Roles } from '../auth/roles.decorator'
@@ -28,6 +35,7 @@ interface AuthenticatedRequest extends Request {
 	user: { _id: string; role: string }
 }
 
+@ApiTags('Users')
 @Controller('users')
 export class UsersController {
 	constructor(private readonly usersService: UsersService) {}
@@ -35,6 +43,11 @@ export class UsersController {
 	@Post()
 	@HttpCode(HttpStatus.CREATED)
 	@UseInterceptors(FileInterceptor('file', multerImageOptions))
+	@ApiConsumes('multipart/form-data')
+	@ApiOperation({ summary: 'Register a new user' })
+	@ApiResponse({ status: 201, description: 'User successfully created.' })
+	@ApiResponse({ status: 400, description: 'Validation failed.' })
+	@ApiResponse({ status: 409, description: 'Email or phone already exists.' })
 	create(
 		@Body() dto: CreateUserDto,
 		@UploadedFile() file: Express.Multer.File,
@@ -44,13 +57,20 @@ export class UsersController {
 
 	@UseGuards(JwtAuthGuard, RolesGuard)
 	@Roles('ADMIN', 'OWNER')
+	@ApiBearerAuth()
 	@Get()
+	@ApiOperation({ summary: 'Get all users (Admin or Owner only)' })
+	@ApiResponse({ status: 200, description: 'List of users retrieved.' })
 	findAll() {
 		return this.usersService.findAll()
 	}
 
 	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
 	@Get(':id')
+	@ApiOperation({ summary: 'Get user by ID' })
+	@ApiResponse({ status: 200, description: 'User found.' })
+	@ApiResponse({ status: 404, description: 'User not found.' })
 	findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
 		if (
 			req.user.role !== 'OWNER' &&
@@ -62,8 +82,13 @@ export class UsersController {
 	}
 
 	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
 	@Patch(':id')
 	@UseInterceptors(FileInterceptor('file', multerImageOptions))
+	@ApiConsumes('multipart/form-data')
+	@ApiOperation({ summary: 'Update user by ID' })
+	@ApiResponse({ status: 200, description: 'User successfully updated.' })
+	@ApiResponse({ status: 404, description: 'User not found.' })
 	update(
 		@Param('id') id: string,
 		@Body() dto: UpdateUserDto,
@@ -81,7 +106,10 @@ export class UsersController {
 	}
 
 	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
 	@Post('saved/:vehicleId')
+	@ApiOperation({ summary: 'Toggle vehicle in saved list' })
+	@ApiResponse({ status: 200, description: 'Saved vehicles list updated.' })
 	toggleSavedVehicle(
 		@Req() req: AuthenticatedRequest,
 		@Param('vehicleId') vehicleId: string,
@@ -91,7 +119,10 @@ export class UsersController {
 
 	@UseGuards(JwtAuthGuard, RolesGuard)
 	@Roles('OWNER')
+	@ApiBearerAuth()
 	@Delete(':id')
+	@ApiOperation({ summary: 'Delete user by ID (Owner only)' })
+	@ApiResponse({ status: 200, description: 'User successfully deleted.' })
 	remove(@Param('id') id: string) {
 		return this.usersService.remove(id)
 	}

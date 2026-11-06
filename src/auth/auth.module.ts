@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common'
+import { ConfigModule, ConfigService } from '@nestjs/config'
 import { JwtModule } from '@nestjs/jwt'
 import { PassportModule } from '@nestjs/passport'
 import { UsersModule } from '../users/users.module'
@@ -8,12 +9,21 @@ import { JwtStrategy } from './jwt.strategy'
 
 @Module({
 	imports: [
+		ConfigModule,
 		forwardRef(() => UsersModule),
 		PassportModule,
-		JwtModule.register({
-			secret:
-				'28ddf7d7db3ee02c41c5d29ad2374b7b0e366daa1d23eb2bf3a4dee747d3af06',
-			signOptions: { expiresIn: '7d' },
+		JwtModule.registerAsync({
+			imports: [ConfigModule],
+			inject: [ConfigService],
+			useFactory: (configService: ConfigService) => ({
+				secret: configService.getOrThrow<string>('JWT_SECRET'),
+				signOptions: {
+					expiresIn: configService.get<string>(
+						'JWT_EXPIRES_IN',
+						'7d',
+					) as import('jsonwebtoken').SignOptions['expiresIn'],
+				},
+			}),
 		}),
 	],
 	providers: [AuthService, JwtStrategy],

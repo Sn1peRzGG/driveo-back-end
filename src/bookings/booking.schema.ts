@@ -43,25 +43,24 @@ export class Booking {
 	@Prop({ required: true, type: Date })
 	endDate!: Date
 
-	@Prop({
-		type: String,
-		ref: 'Location',
-		required: true,
-	})
-	pickupLocation!: string
+	@Prop({ type: String, ref: 'City', required: true })
+	pickupCity!: string
 
-	@Prop({
-		type: String,
-		ref: 'Location',
-		required: true,
-	})
-	returnLocation!: string
+	@Prop({ type: String, ref: 'City', required: true })
+	returnCity!: string
 
 	@Prop({
 		required: true,
 		min: 0,
 	})
 	totalPrice!: number
+
+	@Prop({
+		required: true,
+		min: 0,
+		default: 0,
+	})
+	oneWayFee!: number
 
 	@Prop({
 		type: String,

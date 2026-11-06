@@ -1,4 +1,5 @@
 import {
+	BadRequestException,
 	ConflictException,
 	Injectable,
 	InternalServerErrorException,
@@ -10,6 +11,12 @@ import { existsSync, mkdirSync } from 'fs'
 import * as fs from 'fs/promises'
 import { Model } from 'mongoose'
 import { extname, join } from 'path'
+import { City, CityDocument } from '../cities/city.schema'
+import {
+	Booking,
+	BookingDocument,
+	BookingStatus,
+} from '../bookings/booking.schema'
 import { CreateVehicleDto } from './dto/create-vehicle.dto'
 import { UpdateVehicleDto } from './dto/update-vehicle.dto'
 import { Vehicle, VehicleDocument } from './vehicle.schema'
@@ -19,7 +26,15 @@ export class VehiclesService {
 	constructor(
 		@InjectModel(Vehicle.name)
 		private readonly vehicleModel: Model<VehicleDocument>,
+		@InjectModel(City.name) private readonly cityModel: Model<CityDocument>,
+		@InjectModel(Booking.name)
+		private readonly bookingModel: Model<BookingDocument>,
 	) {}
+
+	private async ensureCityExists(cityId: string): Promise<void> {
+		const city = await this.cityModel.exists({ _id: cityId } as any)
+		if (!city) throw new NotFoundException('City not found')
+	}
 
 	private readonly uploadPath = join(process.cwd(), 'public', 'vehicles')
 
@@ -38,10 +53,13 @@ export class VehiclesService {
 			const relativePath = path.replace(/^\/+/, '')
 			const fullPath = join(process.cwd(), 'public', relativePath)
 			await fs.unlink(fullPath)
-		} catch {}
+		} catch {
+			return
+		}
 	}
 
 	async create(dto: CreateVehicleDto, file: Express.Multer.File) {
+		await this.ensureCityExists(dto.city)
 		const existing = await this.vehicleModel.findOne({
 			brand: dto.brand,
 			model: dto.model,
@@ -65,7 +83,7 @@ export class VehiclesService {
 				image,
 				isDeleted: false,
 			} as any)
-			return await vehicle.populate('category')
+			return await vehicle.populate(['category', 'city'])
 		} catch {
 			if (image) await this.deleteFile(image)
 			throw new InternalServerErrorException({
@@ -77,7 +95,7 @@ export class VehiclesService {
 	async findAll() {
 		return this.vehicleModel
 			.find({ isDeleted: false })
-			.populate('category')
+			.populate(['category', 'city'])
 			.sort({ createdAt: -1 })
 			.lean()
 	}
@@ -93,6 +111,8 @@ export class VehiclesService {
 		seats?: number,
 		isAvailable?: boolean,
 		sortBy?: string,
+		rentalDate?: string,
+		returnDate?: string,
 	) {
 		const filter: any = { isDeleted: false }
 
@@ -110,6 +130,34 @@ export class VehiclesService {
 		}
 
 		if (isAvailable === true) filter.isAvailable = true
+		if (rentalDate || returnDate) {
+			if (!rentalDate || !returnDate) {
+				throw new BadRequestException(
+					'Rental and return dates are both required',
+				)
+			}
+			const startDate = new Date(rentalDate)
+			const endDate = new Date(returnDate)
+			if (
+				Number.isNaN(startDate.getTime()) ||
+				Number.isNaN(endDate.getTime()) ||
+				startDate >= endDate
+			) {
+				throw new BadRequestException('Invalid rental date range')
+			}
+			const bookedVehicleIds = await this.bookingModel.distinct('vehicle', {
+				status: {
+					$in: [
+						BookingStatus.PENDING,
+						BookingStatus.CONFIRMED,
+						BookingStatus.ACTIVE,
+					],
+				},
+				startDate: { $lt: endDate },
+				endDate: { $gt: startDate },
+			})
+			filter._id = { $nin: bookedVehicleIds }
+		}
 
 		const total = await this.vehicleModel.countDocuments(filter)
 
@@ -146,7 +194,7 @@ export class VehiclesService {
 
 		const data = await this.vehicleModel
 			.find(filter)
-			.populate('category')
+			.populate(['category', 'city'])
 			.sort(sortObject)
 			.skip((page - 1) * limit)
 			.limit(limit)
@@ -168,7 +216,7 @@ export class VehiclesService {
 	async findOne(id: string) {
 		const vehicle = await this.vehicleModel
 			.findOne({ _id: id, isDeleted: false } as any)
-			.populate('category')
+			.populate(['category', 'city'])
 			.lean()
 		if (!vehicle) throw new NotFoundException({ message: 'Vehicle not found' })
 		return vehicle
@@ -180,6 +228,8 @@ export class VehiclesService {
 			isDeleted: false,
 		} as any)
 		if (!current) throw new NotFoundException({ message: 'Vehicle not found' })
+		if (dto.city && dto.city !== current.city)
+			await this.ensureCityExists(dto.city)
 
 		if (dto.model && dto.model !== current.model) {
 			const existing = await this.vehicleModel.findOne({
@@ -212,20 +262,27 @@ export class VehiclesService {
 					{ $set: updateData },
 					{ returnDocument: 'after' },
 				)
-				.populate('category')
+				.populate(['category', 'city'])
 
 			if (file && current.image) await this.deleteFile(current.image)
 			return updated
 		} catch {
 			if (file && image !== current.image) await this.deleteFile(image)
 			throw new InternalServerErrorException({
-				message: 'Failed to update vehicle',
+				message: 'Failed to create vehicle',
 			})
 		}
 	}
 
-	async findAllCities(): Promise<string[]> {
-		return this.vehicleModel.distinct('city', { isDeleted: false })
+	async findAllCities() {
+		return this.cityModel
+			.find({
+				_id: {
+					$in: await this.vehicleModel.distinct('city', { isDeleted: false }),
+				},
+			} as any)
+			.sort({ name: 1 })
+			.lean()
 	}
 
 	async remove(id: string) {
