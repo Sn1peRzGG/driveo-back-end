@@ -3,9 +3,8 @@ import {
 	IsDateString,
 	IsNotEmpty,
 	IsString,
-	IsUUID,
-	MaxLength,
 	Matches,
+	MaxLength,
 } from 'class-validator'
 
 export class CreateBookingDto {
@@ -13,7 +12,7 @@ export class CreateBookingDto {
 		example: '123e4567-e89b-12d3-a456-426614174000',
 		description: 'Vehicle UUIDv4 ID',
 	})
-	@IsUUID('4')
+	@IsString()
 	@IsNotEmpty()
 	vehicleId!: string
 
@@ -42,7 +41,7 @@ export class CreateBookingDto {
 	@ApiProperty({
 		description: 'Pickup city UUIDv4 ID. It must match the vehicle city.',
 	})
-	@IsUUID('4')
+	@IsString()
 	@IsNotEmpty()
 	@MaxLength(255)
 	pickupCity!: string
@@ -51,7 +50,7 @@ export class CreateBookingDto {
 		description:
 			'Return city UUIDv4 ID. A different city creates a one-way rental.',
 	})
-	@IsUUID('4')
+	@IsString()
 	@IsNotEmpty()
 	@MaxLength(255)
 	returnCity!: string

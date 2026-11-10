@@ -1,14 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger'
 import { Type } from 'class-transformer'
-import { IsNumber, IsUUID, Min } from 'class-validator'
+import { IsNumber, IsString, Min } from 'class-validator'
 
 export class CreateOneWayFeeDto {
 	@ApiProperty({ description: 'Origin city UUIDv4 ID' })
-	@IsUUID('4')
+	@IsString()
 	originCity!: string
 
 	@ApiProperty({ description: 'Destination city UUIDv4 ID' })
-	@IsUUID('4')
+	@IsString()
 	destinationCity!: string
 
 	@ApiProperty({ example: 50, description: 'One-way rental fee' })

@@ -4,6 +4,18 @@ import { Document } from 'mongoose'
 
 export type VehicleDocument = Vehicle & Document
 
+export enum Transmission {
+	AUTOMATIC = 'AUTOMATIC',
+	MANUAL = 'MANUAL',
+}
+
+export enum FuelType {
+	PETROL = 'PETROL',
+	DIESEL = 'DIESEL',
+	HYBRID = 'HYBRID',
+	ELECTRIC = 'ELECTRIC',
+}
+
 @Schema({
 	timestamps: true,
 	versionKey: false,
@@ -28,14 +40,22 @@ export class Vehicle {
 	model!: string
 
 	@Prop({
+		required: true,
+		trim: true,
+	})
+	year!: number
+
+	@Prop({
 		default: '',
 	})
 	description!: string
 
 	@Prop({
+		type: [String],
 		required: true,
+		default: [],
 	})
-	image!: string
+	images!: string[]
 
 	@Prop({
 		type: String,
@@ -55,6 +75,25 @@ export class Vehicle {
 		min: 1,
 	})
 	seats!: number
+
+	@Prop({
+		enum: Object.values(Transmission),
+		default: Transmission.AUTOMATIC,
+	})
+	transmission!: Transmission
+
+	@Prop({
+		type: String,
+		enum: Object.values(FuelType),
+		default: FuelType.PETROL,
+	})
+	fuelType!: FuelType
+
+	@Prop({ min: 2, max: 8, default: 4 })
+	doors!: number
+
+	@Prop({ type: [String], default: [] })
+	features!: string[]
 
 	@Prop({
 		type: String,

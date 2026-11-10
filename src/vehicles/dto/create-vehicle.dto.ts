@@ -1,16 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import { Transform, Type } from 'class-transformer'
 import {
+	IsArray,
 	IsBoolean,
+	IsEnum,
 	IsInt,
 	IsNumber,
 	IsOptional,
 	IsString,
-	IsUUID,
+	Max,
 	MaxLength,
 	Min,
 	MinLength,
 } from 'class-validator'
+import { FuelType, Transmission } from '../vehicle.schema'
 
 export class CreateVehicleDto {
 	@ApiProperty({
@@ -32,6 +35,25 @@ export class CreateVehicleDto {
 	model!: string
 
 	@ApiProperty({
+		example: 'A reliable and fuel-efficient sedan.',
+		description: 'Vehicle description',
+	})
+	@IsString()
+	@MinLength(10)
+	@MaxLength(1000)
+	description!: string
+
+	@ApiProperty({
+		example: 2020,
+		description: 'Vehicle manufacturing year',
+	})
+	@Type(() => Number)
+	@IsInt()
+	@Min(1900)
+	@Max(new Date().getFullYear() + 1)
+	year!: number
+
+	@ApiProperty({
 		example: 'Sedan',
 		description: 'Vehicle type',
 	})
@@ -51,7 +73,7 @@ export class CreateVehicleDto {
 		example: '123e4567-e89b-12d3-a456-426614174000',
 		description: 'City UUIDv4 ID',
 	})
-	@IsUUID('4')
+	@IsString()
 	city!: string
 
 	@ApiProperty({
@@ -71,6 +93,48 @@ export class CreateVehicleDto {
 	@IsInt()
 	@Min(1)
 	seats!: number
+
+	@ApiPropertyOptional({
+		enum: Transmission,
+		example: Transmission.AUTOMATIC,
+		description: 'Transmission type',
+	})
+	@IsOptional()
+	@IsEnum(Transmission)
+	transmission?: Transmission
+
+	@ApiPropertyOptional({ enum: FuelType, example: FuelType.HYBRID })
+	@IsOptional()
+	@IsEnum(FuelType)
+	fuelType?: FuelType
+
+	@ApiPropertyOptional({ example: 4, description: 'Number of doors' })
+	@IsOptional()
+	@Type(() => Number)
+	@IsInt()
+	@Min(2)
+	doors?: number
+
+	@ApiPropertyOptional({
+		example: ['Bluetooth', 'Apple CarPlay', 'Parking sensors'],
+		description: 'JSON array or comma-separated vehicle features',
+	})
+	@IsOptional()
+	@Transform(({ value }) => {
+		if (Array.isArray(value)) return value
+		if (typeof value !== 'string') return value
+		try {
+			return JSON.parse(value)
+		} catch {
+			return value
+				.split(',')
+				.map(item => item.trim())
+				.filter(Boolean)
+		}
+	})
+	@IsArray()
+	@IsString({ each: true })
+	features?: string[]
 
 	@ApiPropertyOptional({
 		example: true,
