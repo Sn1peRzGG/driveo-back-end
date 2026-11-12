@@ -4,6 +4,7 @@ import {
 	Delete,
 	Get,
 	Param,
+	ParseUUIDPipe,
 	Patch,
 	Post,
 	Req,
@@ -67,7 +68,7 @@ export class BookingsController {
 	@ApiOperation({ summary: 'Update booking status (Admin only)' })
 	@ApiResponse({ status: 200, description: 'Status updated.' })
 	async updateStatus(
-		@Param('id') id: string,
+		@Param('id', new ParseUUIDPipe()) id: string,
 		@Body() updateBookingStatusDto: UpdateBookingStatusDto,
 	) {
 		return this.bookingsService.updateStatus(id, updateBookingStatusDto)
@@ -76,7 +77,10 @@ export class BookingsController {
 	@Patch(':id/cancel')
 	@ApiOperation({ summary: 'Cancel user booking' })
 	@ApiResponse({ status: 200, description: 'Booking successfully cancelled.' })
-	async cancelBooking(@Param('id') id: string, @Req() req: any) {
+	async cancelBooking(
+		@Param('id', new ParseUUIDPipe()) id: string,
+		@Req() req: any,
+	) {
 		const userId = req.user._id
 		return this.bookingsService.cancelBooking(id, userId)
 	}
@@ -86,7 +90,7 @@ export class BookingsController {
 	@Roles('ADMIN')
 	@ApiOperation({ summary: 'Delete booking from database (Admin only)' })
 	@ApiResponse({ status: 200, description: 'Booking deleted.' })
-	async deleteBooking(@Param('id') id: string) {
+	async deleteBooking(@Param('id', new ParseUUIDPipe()) id: string) {
 		return this.bookingsService.deleteBooking(id)
 	}
 }

@@ -109,7 +109,7 @@ export class Vehicle {
 	})
 	type!: string
 
-	@Prop({ type: Boolean })
+	@Prop({ type: Boolean, default: true })
 	isAvailable!: boolean
 
 	@Prop({ type: Boolean, default: false })

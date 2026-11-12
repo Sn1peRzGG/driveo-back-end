@@ -4,22 +4,37 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common'
-import { InjectModel } from '@nestjs/mongoose'
-import { Model } from 'mongoose'
-import { User, UserDocument } from '../users/user.schema'
-import { Vehicle, VehicleDocument } from '../vehicles/vehicle.schema'
+import { InjectConnection, InjectModel } from '@nestjs/mongoose'
+import { ClientSession, Connection, Model } from 'mongoose'
 import { City, CityDocument } from '../cities/city.schema'
 import {
 	OneWayFee,
 	OneWayFeeDocument,
 } from '../one-way-fees/one-way-fee.schema'
+import { User, UserDocument } from '../users/user.schema'
+import { Vehicle, VehicleDocument } from '../vehicles/vehicle.schema'
 import { Booking, BookingDocument, BookingStatus } from './booking.schema'
 import { CreateBookingDto } from './dto/create-booking.dto'
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto'
 
+const BLOCKING_STATUSES = [
+	BookingStatus.PENDING,
+	BookingStatus.CONFIRMED,
+	BookingStatus.ACTIVE,
+]
+
+const ALLOWED_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
+	[BookingStatus.PENDING]: [BookingStatus.CONFIRMED, BookingStatus.CANCELLED],
+	[BookingStatus.CONFIRMED]: [BookingStatus.ACTIVE, BookingStatus.CANCELLED],
+	[BookingStatus.ACTIVE]: [BookingStatus.COMPLETED],
+	[BookingStatus.COMPLETED]: [],
+	[BookingStatus.CANCELLED]: [],
+}
+
 @Injectable()
 export class BookingsService {
 	constructor(
+		@InjectConnection() private readonly connection: Connection,
 		@InjectModel(Booking.name) private bookingModel: Model<BookingDocument>,
 		@InjectModel(Vehicle.name) private vehicleModel: Model<VehicleDocument>,
 		@InjectModel(User.name) private userModel: Model<UserDocument>,
@@ -35,6 +50,24 @@ export class BookingsService {
 		}
 		date.setUTCHours(0, 0, 0, 0)
 		return date
+	}
+
+	private async resolveExpectedPickupCity(
+		vehicle: VehicleDocument,
+		start: Date,
+		session: ClientSession,
+	): Promise<string> {
+		const previousBooking = await this.bookingModel
+			.findOne({
+				vehicle: vehicle._id as any,
+				status: { $in: BLOCKING_STATUSES },
+				endDate: { $lte: start },
+			})
+			.sort({ endDate: -1 })
+			.session(session)
+			.lean()
+
+		return previousBooking ? previousBooking.returnCity : vehicle.city
 	}
 
 	async create(
@@ -65,85 +98,129 @@ export class BookingsService {
 			)
 		}
 
-		const vehicle = await this.vehicleModel.findOne({
-			_id: vehicleId,
-			isDeleted: false,
-		} as any)
+		const session = await this.connection.startSession()
+		try {
+			let createdBooking!: Booking
 
-		if (!vehicle || !vehicle.isAvailable) {
-			throw new NotFoundException(
-				`Vehicle with ID ${vehicleId} not found or unavailable for rental`,
-			)
-		}
+			await session.withTransaction(async () => {
+				const vehicle = await this.vehicleModel
+					.findOne<VehicleDocument>({
+						_id: vehicleId as any,
+						isDeleted: false,
+					})
+					.session(session)
 
-		if (pickupCity !== vehicle.city) {
-			throw new BadRequestException('Pickup city must match the vehicle city')
-		}
-		if (!(await this.cityModel.exists({ _id: returnCity } as any))) {
-			throw new NotFoundException('Return city not found')
-		}
+				if (!vehicle || !vehicle.isAvailable) {
+					throw new NotFoundException(
+						`Vehicle with ID ${vehicleId} not found or unavailable for rental`,
+					)
+				}
 
-		const user = await this.userModel.findById(userId)
-		if (!user) {
-			throw new NotFoundException('User not found')
-		}
+				const [returnCityExists, user] = await Promise.all([
+					this.cityModel.exists({ _id: returnCity as any }).session(session),
+					this.userModel.findById(userId).session(session),
+				])
 
-		const overlappingBooking = await this.bookingModel.findOne({
-			vehicle: vehicleId,
-			status: {
-				$in: [
-					BookingStatus.PENDING,
-					BookingStatus.CONFIRMED,
-					BookingStatus.ACTIVE,
-				],
-			},
-			startDate: { $lt: end },
-			endDate: { $gt: start },
-		})
+				if (!returnCityExists) {
+					throw new NotFoundException('Return city not found')
+				}
+				if (!user) {
+					throw new NotFoundException('User not found')
+				}
 
-		if (overlappingBooking) {
-			throw new BadRequestException(
-				'Vehicle is already booked for one or more dates in the selected range',
-			)
-		}
+				const overlappingBooking = await this.bookingModel
+					.findOne({
+						vehicle: vehicleId as any,
+						status: { $in: BLOCKING_STATUSES },
+						startDate: { $lt: end },
+						endDate: { $gt: start },
+					})
+					.session(session)
 
-		const diffTime = Math.abs(end.getTime() - start.getTime())
-		const rentalDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-		const isOneWayRental = returnCity !== vehicle.city
-		const routeFee = isOneWayRental
-			? await this.oneWayFeeModel
-					.findOne({ originCity: vehicle.city, destinationCity: returnCity })
+				if (overlappingBooking) {
+					throw new BadRequestException(
+						'Vehicle is already booked for one or more dates in the selected range',
+					)
+				}
+
+				const expectedPickupCity = await this.resolveExpectedPickupCity(
+					vehicle,
+					start,
+					session,
+				)
+
+				if (pickupCity !== expectedPickupCity) {
+					throw new BadRequestException(
+						'Pickup city must match the vehicle location on the start date',
+					)
+				}
+
+				const nextBooking = await this.bookingModel
+					.findOne({
+						vehicle: vehicleId as any,
+						status: { $in: BLOCKING_STATUSES },
+						startDate: { $gte: end },
+					})
+					.sort({ startDate: 1 })
+					.session(session)
 					.lean()
-			: null
-		if (isOneWayRental && !routeFee) {
-			throw new BadRequestException(
-				'No one-way fee is configured for this route',
-			)
+
+				if (nextBooking && nextBooking.pickupCity !== returnCity) {
+					throw new BadRequestException(
+						'Return city conflicts with a subsequent scheduled booking for this vehicle',
+					)
+				}
+
+				const diffTime = end.getTime() - start.getTime()
+				const rentalDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+				const isOneWayRental = returnCity !== expectedPickupCity
+
+				const routeFee = isOneWayRental
+					? await this.oneWayFeeModel
+							.findOne({
+								originCity: expectedPickupCity as any,
+								destinationCity: returnCity as any,
+							})
+							.session(session)
+							.lean()
+					: null
+
+				if (isOneWayRental && !routeFee) {
+					throw new BadRequestException(
+						'No one-way fee is configured for this route',
+					)
+				}
+
+				const oneWayFee = routeFee?.fee ?? 0
+				const totalPrice = Number(
+					(vehicle.pricePerDay * rentalDays + oneWayFee).toFixed(2),
+				)
+
+				const newBooking = new this.bookingModel({
+					user: userId,
+					vehicle: vehicleId,
+					startDate: start,
+					endDate: end,
+					pickupCity: expectedPickupCity,
+					returnCity,
+					totalPrice,
+					oneWayFee,
+					phoneNumber,
+					status: BookingStatus.PENDING,
+				})
+
+				createdBooking = await newBooking.save({ session })
+			})
+
+			return createdBooking
+		} finally {
+			await session.endSession()
 		}
-		const oneWayFee = routeFee?.fee ?? 0
-		const totalPrice = Number(
-			(vehicle.pricePerDay * rentalDays + oneWayFee).toFixed(2),
-		)
-
-		const newBooking = new this.bookingModel({
-			user: userId,
-			vehicle: vehicleId,
-			startDate: start,
-			endDate: end,
-			pickupCity: vehicle.city,
-			returnCity,
-			totalPrice,
-			oneWayFee,
-			phoneNumber,
-			status: BookingStatus.PENDING,
-		})
-
-		return newBooking.save()
 	}
 
 	async getUserBookings(userId: string): Promise<Booking[]> {
 		return this.bookingModel
-			.find({ user: userId })
+			.find({ user: userId as any })
 			.populate(['vehicle', 'pickupCity', 'returnCity'])
 			.sort({ createdAt: -1 })
 			.exec()
@@ -152,7 +229,7 @@ export class BookingsService {
 	async getAllBookings(): Promise<Booking[]> {
 		return this.bookingModel
 			.find()
-			.populate('user')
+			.populate('user', 'name email phoneNumber')
 			.populate(['vehicle', 'pickupCity', 'returnCity'])
 			.sort({ createdAt: -1 })
 			.exec()
@@ -167,10 +244,19 @@ export class BookingsService {
 			throw new NotFoundException(`Booking with ID ${id} not found`)
 		}
 
-		if (
-			updateBookingStatusDto.status === BookingStatus.COMPLETED &&
-			booking.status !== BookingStatus.COMPLETED
-		) {
+		const nextStatus = updateBookingStatusDto.status
+		if (booking.status === nextStatus) {
+			return booking
+		}
+
+		const allowed = ALLOWED_TRANSITIONS[booking.status] ?? []
+		if (!allowed.includes(nextStatus)) {
+			throw new BadRequestException(
+				`Cannot transition booking from ${booking.status} to ${nextStatus}`,
+			)
+		}
+
+		if (nextStatus === BookingStatus.COMPLETED) {
 			const today = new Date()
 			today.setUTCHours(0, 0, 0, 0)
 			if (today < booking.endDate) {
@@ -178,26 +264,21 @@ export class BookingsService {
 					'Booking cannot be completed before its end date',
 				)
 			}
-		}
 
-		const shouldMoveVehicle =
-			updateBookingStatusDto.status === BookingStatus.COMPLETED &&
-			booking.status !== BookingStatus.COMPLETED &&
-			booking.pickupCity !== booking.returnCity
-
-		if (shouldMoveVehicle) {
-			const vehicle = await this.vehicleModel.findOne({
-				_id: booking.vehicle,
-				isDeleted: false,
-			} as any)
-			if (!vehicle) {
-				throw new NotFoundException('Vehicle not found')
+			if (booking.pickupCity !== booking.returnCity) {
+				const vehicle = await this.vehicleModel.findOne<VehicleDocument>({
+					_id: booking.vehicle as any,
+					isDeleted: false,
+				})
+				if (!vehicle) {
+					throw new NotFoundException('Vehicle not found')
+				}
+				vehicle.city = booking.returnCity
+				await vehicle.save()
 			}
-			vehicle.city = booking.returnCity
-			await vehicle.save()
 		}
 
-		booking.status = updateBookingStatusDto.status
+		booking.status = nextStatus
 		return booking.save()
 	}
 
@@ -207,7 +288,7 @@ export class BookingsService {
 			throw new NotFoundException(`Booking with ID ${id} not found`)
 		}
 
-		if (booking.user.toString() !== userId.toString()) {
+		if (booking.user !== userId) {
 			throw new ForbiddenException('You can only cancel your own bookings')
 		}
 
@@ -216,7 +297,7 @@ export class BookingsService {
 			booking.status !== BookingStatus.CONFIRMED
 		) {
 			throw new BadRequestException(
-				'Cannot cancel an active or already completed booking',
+				'Cannot cancel an active, completed, or already cancelled booking',
 			)
 		}
 
