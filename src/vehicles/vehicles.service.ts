@@ -139,6 +139,14 @@ export class VehiclesService {
 		return vehicles.map(vehicle => this.toResponse(vehicle))
 	}
 
+	private parseCommaList(value?: string): string[] {
+		if (!value || value === 'all') return []
+		return value
+			.split(',')
+			.map(item => item.trim())
+			.filter(item => item && item !== 'all')
+	}
+
 	async search(
 		brand?: string,
 		category?: string,
@@ -147,7 +155,7 @@ export class VehiclesService {
 		limit: number = 20,
 		minPrice?: number,
 		maxPrice?: number,
-		seats?: number,
+		seats?: string,
 		transmission?: string,
 		fuelType?: string,
 		isAvailable?: boolean,
@@ -159,14 +167,40 @@ export class VehiclesService {
 	) {
 		const filter: any = { isDeleted: false }
 
-		if (brand && brand !== 'all')
-			filter.brand = { $regex: brand, $options: 'i' }
-		if (category && category !== 'all') filter.category = category
-		if (city && city !== 'all') filter.city = city
-		if (seats !== undefined) filter.seats = seats
-		if (transmission && transmission !== 'all')
-			filter.transmission = transmission
-		if (fuelType && fuelType !== 'all') filter.fuelType = fuelType
+		const brands = this.parseCommaList(brand)
+		if (brands.length > 0) {
+			const escapedBrands = brands.map(
+				b => new RegExp(b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
+			)
+			filter.brand = { $in: escapedBrands }
+		}
+
+		const categories = this.parseCommaList(category)
+		if (categories.length > 0) {
+			filter.category = { $in: categories }
+		}
+
+		const cities = this.parseCommaList(city)
+		if (cities.length > 0) {
+			filter.city = { $in: cities }
+		}
+
+		const seatList = this.parseCommaList(seats)
+			.map(s => parseInt(s, 10))
+			.filter(n => !Number.isNaN(n))
+		if (seatList.length > 0) {
+			filter.seats = { $in: seatList }
+		}
+
+		const transmissions = this.parseCommaList(transmission)
+		if (transmissions.length > 0) {
+			filter.transmission = { $in: transmissions }
+		}
+
+		const fuelTypes = this.parseCommaList(fuelType)
+		if (fuelTypes.length > 0) {
+			filter.fuelType = { $in: fuelTypes }
+		}
 
 		if (minPrice !== undefined || maxPrice !== undefined) {
 			filter.pricePerDay = {}

@@ -43,11 +43,21 @@ export class BookingsService {
 		private oneWayFeeModel: Model<OneWayFeeDocument>,
 	) {}
 
-	private normalizeDate(dateString: string): Date {
+	private normalizeStartDate(dateString: string): Date {
 		const date = new Date(dateString)
 		if (isNaN(date.getTime())) {
 			throw new BadRequestException(`Invalid date format: ${dateString}`)
 		}
+		date.setUTCHours(0, 0, 0, 0)
+		return date
+	}
+
+	private normalizeEndDate(dateString: string): Date {
+		const date = new Date(dateString)
+		if (isNaN(date.getTime())) {
+			throw new BadRequestException(`Invalid date format: ${dateString}`)
+		}
+		date.setUTCDate(date.getUTCDate() + 1)
 		date.setUTCHours(0, 0, 0, 0)
 		return date
 	}
@@ -83,8 +93,8 @@ export class BookingsService {
 			phoneNumber,
 		} = createBookingDto
 
-		const start = this.normalizeDate(startDate)
-		const end = this.normalizeDate(endDate)
+		const start = this.normalizeStartDate(startDate)
+		const end = this.normalizeEndDate(endDate)
 		const today = new Date()
 		today.setUTCHours(0, 0, 0, 0)
 

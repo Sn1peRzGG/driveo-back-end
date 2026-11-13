@@ -48,16 +48,46 @@ export class VehiclesController {
 	@Get('search')
 	@ApiOperation({ summary: 'Search and filter vehicles with pagination' })
 	@ApiResponse({ status: 200, description: 'Search results retrieved.' })
-	@ApiQuery({ name: 'brand', required: false, type: String })
-	@ApiQuery({ name: 'category', required: false, type: String })
-	@ApiQuery({ name: 'city', required: false, type: String })
+	@ApiQuery({
+		name: 'brand',
+		required: false,
+		type: String,
+		description: 'Comma-separated brands',
+	})
+	@ApiQuery({
+		name: 'category',
+		required: false,
+		type: String,
+		description: 'Comma-separated category IDs',
+	})
+	@ApiQuery({
+		name: 'city',
+		required: false,
+		type: String,
+		description: 'Comma-separated city IDs',
+	})
 	@ApiQuery({ name: 'page', required: false, type: String })
 	@ApiQuery({ name: 'limit', required: false, type: String })
 	@ApiQuery({ name: 'minPrice', required: false, type: String })
 	@ApiQuery({ name: 'maxPrice', required: false, type: String })
-	@ApiQuery({ name: 'seats', required: false, type: String })
-	@ApiQuery({ name: 'transmission', required: false, type: String })
-	@ApiQuery({ name: 'fuelType', required: false, type: String })
+	@ApiQuery({
+		name: 'seats',
+		required: false,
+		type: String,
+		description: 'Comma-separated seat counts (e.g. 4,5,7)',
+	})
+	@ApiQuery({
+		name: 'transmission',
+		required: false,
+		type: String,
+		description: 'Comma-separated transmissions',
+	})
+	@ApiQuery({
+		name: 'fuelType',
+		required: false,
+		type: String,
+		description: 'Comma-separated fuel types',
+	})
 	@ApiQuery({ name: 'isAvailable', required: false, type: String })
 	@ApiQuery({ name: 'sortBy', required: false, type: String })
 	@ApiQuery({ name: 'minYear', required: false, type: String })
@@ -87,9 +117,6 @@ export class VehiclesController {
 		const maxPriceNum = maxPrice ? parseFloat(maxPrice) : undefined
 		const minYearNum = minYear ? parseInt(minYear, 10) : undefined
 		const maxYearNum = maxYear ? parseInt(maxYear, 10) : undefined
-		const seatsNum = seats ? parseInt(seats, 10) : undefined
-		const transmissionStr = transmission ? String(transmission) : undefined
-
 		const isAvailableBool = isAvailable === 'true' ? true : undefined
 
 		return this.vehiclesService.search(
@@ -100,8 +127,8 @@ export class VehiclesController {
 			limitNum,
 			minPriceNum,
 			maxPriceNum,
-			seatsNum,
-			transmissionStr,
+			seats,
+			transmission,
 			fuelType,
 			isAvailableBool,
 			sortBy,
