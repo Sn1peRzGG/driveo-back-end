@@ -53,12 +53,7 @@ export class User {
 	city!: string
 
 	@Prop({
-		default: '',
-	})
-	address!: string
-
-	@Prop({
-		enum: ['USER', 'ADMIN', 'OWNER'],
+		enum: ['USER', 'ADMIN', 'FLEET_ADMIN', 'SYSADMIN', 'OWNER'],
 		default: 'USER',
 	})
 	role!: string

@@ -35,6 +35,8 @@ interface AuthenticatedRequest extends Request {
 	user: { _id: string; role: string }
 }
 
+const STAFF_ROLES = ['ADMIN', 'FLEET_ADMIN', 'SYSADMIN', 'OWNER']
+
 @ApiTags('Users')
 @Controller('users')
 export class UsersController {
@@ -69,15 +71,11 @@ export class UsersController {
 	@ApiBearerAuth()
 	@Get(':id')
 	@ApiOperation({ summary: 'Get user by ID' })
-	@ApiResponse({ status: 200, description: 'User found.' })
-	@ApiResponse({ status: 404, description: 'User not found.' })
 	findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-		if (
-			req.user.role !== 'OWNER' &&
-			req.user.role !== 'ADMIN' &&
-			req.user._id !== id
-		)
-			throw new ForbiddenException()
+		const isStaff = STAFF_ROLES.includes(req.user.role)
+		if (!isStaff && req.user._id !== id) {
+			throw new ForbiddenException('You can only view your own profile.')
+		}
 		return this.usersService.findOne(id)
 	}
 
@@ -89,20 +87,46 @@ export class UsersController {
 	@ApiOperation({ summary: 'Update user by ID' })
 	@ApiResponse({ status: 200, description: 'User successfully updated.' })
 	@ApiResponse({ status: 404, description: 'User not found.' })
-	update(
+	async update(
 		@Param('id') id: string,
 		@Body() dto: UpdateUserDto,
 		@Req() req: AuthenticatedRequest,
 		@UploadedFile() file?: Express.Multer.File,
 	) {
-		if (
-			req.user.role !== 'OWNER' &&
-			req.user.role !== 'ADMIN' &&
-			req.user._id !== id
-		)
-			throw new ForbiddenException()
-		if (req.user.role !== 'OWNER') delete (dto as any).role
-		return this.usersService.update(id, dto, req.user.role, file)
+		const currentUser = req.user
+		const targetUserId = id
+
+		const isStaff = ['OWNER', 'SYSADMIN', 'ADMIN'].includes(currentUser.role)
+		const isSelf = currentUser._id === targetUserId
+
+		if (!isStaff && !isSelf) {
+			throw new ForbiddenException(
+				'You do not have permission to update this user.',
+			)
+		}
+
+		if (dto.role) {
+			if (currentUser.role !== 'OWNER' && currentUser.role !== 'SYSADMIN') {
+				throw new ForbiddenException(
+					'Only Owners and System Administrators can change user roles.',
+				)
+			}
+
+			if (
+				currentUser.role === 'SYSADMIN' &&
+				(dto.role === 'SYSADMIN' || dto.role === 'OWNER')
+			) {
+				throw new ForbiddenException(
+					'System Administrators cannot assign SYSADMIN or OWNER roles.',
+				)
+			}
+		} else {
+			if (currentUser.role !== 'OWNER' && currentUser.role !== 'SYSADMIN') {
+				delete (dto as any).role
+			}
+		}
+
+		return this.usersService.update(id, dto, currentUser.role, file)
 	}
 
 	@UseGuards(JwtAuthGuard)
@@ -117,11 +141,30 @@ export class UsersController {
 		return this.usersService.toggleSavedVehicle(req.user._id, vehicleId)
 	}
 
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@Delete('me')
+	@ApiOperation({ summary: 'Delete own user account (Regular users only)' })
+	@ApiResponse({ status: 200, description: 'Account successfully deleted.' })
+	removeMyAccount(@Req() req: AuthenticatedRequest) {
+		const user = req.user
+
+		if (STAFF_ROLES.includes(user.role)) {
+			throw new ForbiddenException(
+				'Admins and higher-tier staff cannot delete their own accounts through self-service.',
+			)
+		}
+
+		return this.usersService.remove(user._id)
+	}
+
 	@UseGuards(JwtAuthGuard, RolesGuard)
-	@Roles('OWNER')
+	@Roles('SYSADMIN')
 	@ApiBearerAuth()
 	@Delete(':id')
-	@ApiOperation({ summary: 'Delete user by ID (Owner only)' })
+	@ApiOperation({
+		summary: 'Delete user by ID (System Administrator or higher)',
+	})
 	@ApiResponse({ status: 200, description: 'User successfully deleted.' })
 	remove(@Param('id') id: string) {
 		return this.usersService.remove(id)

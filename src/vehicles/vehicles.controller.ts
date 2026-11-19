@@ -40,9 +40,21 @@ export class VehiclesController {
 
 	@Get('cities')
 	@ApiOperation({ summary: 'Get list of unique vehicle cities' })
-	@ApiResponse({ status: 200, description: 'Cities list retrieved.' })
+	@ApiResponse({ status: 200, description: 'Brands list retrieved.' })
 	findAllCities() {
 		return this.vehiclesService.findAllCities()
+	}
+
+	@Get('brands')
+	@ApiOperation({ summary: 'Get list of unique vehicle brands' })
+	findAllBrands() {
+		return this.vehiclesService.findAllBrands()
+	}
+
+	@Get('models')
+	@ApiOperation({ summary: 'Get list of unique vehicle models' })
+	findAllModels() {
+		return this.vehiclesService.findAllModels()
 	}
 
 	@Get('search')
@@ -52,13 +64,13 @@ export class VehiclesController {
 		name: 'brand',
 		required: false,
 		type: String,
-		description: 'Comma-separated brands',
+		description: 'Comma-separated brand IDs',
 	})
 	@ApiQuery({
-		name: 'category',
+		name: 'model',
 		required: false,
 		type: String,
-		description: 'Comma-separated category IDs',
+		description: 'Comma-separated model IDs',
 	})
 	@ApiQuery({
 		name: 'city',
@@ -94,6 +106,7 @@ export class VehiclesController {
 	@ApiQuery({ name: 'maxYear', required: false, type: String })
 	search(
 		@Query('brand') brand?: string,
+		@Query('model') model?: string,
 		@Query('category') category?: string,
 		@Query('city') city?: string,
 		@Query('page') page: string = '1',
@@ -121,6 +134,7 @@ export class VehiclesController {
 
 		return this.vehiclesService.search(
 			brand,
+			model,
 			category,
 			city,
 			pageNum,
@@ -146,7 +160,7 @@ export class VehiclesController {
 	@HttpCode(HttpStatus.CREATED)
 	@UseInterceptors(FilesInterceptor('images', 3, multerImageOptions))
 	@ApiConsumes('multipart/form-data')
-	@ApiOperation({ summary: 'Create a new vehicle (Admin only)' })
+	@ApiOperation({ summary: 'Create a new vehicle (Admin or higher)' })
 	@ApiResponse({ status: 201, description: 'Vehicle successfully created.' })
 	@ApiResponse({
 		status: 400,
@@ -188,7 +202,7 @@ export class VehiclesController {
 	@Patch(':id')
 	@UseInterceptors(FilesInterceptor('images', 3, multerImageOptions))
 	@ApiConsumes('multipart/form-data')
-	@ApiOperation({ summary: 'Update vehicle by ID (Admin only)' })
+	@ApiOperation({ summary: 'Update vehicle by ID (Admin or higher)' })
 	@ApiResponse({ status: 200, description: 'Vehicle successfully updated.' })
 	@ApiResponse({ status: 404, description: 'Vehicle not found.' })
 	update(
@@ -203,7 +217,7 @@ export class VehiclesController {
 	@Roles('ADMIN')
 	@ApiBearerAuth()
 	@Delete(':id')
-	@ApiOperation({ summary: 'Delete vehicle by ID (Admin only)' })
+	@ApiOperation({ summary: 'Delete vehicle by ID (Admin or higher)' })
 	@ApiResponse({ status: 200, description: 'Delete status.' })
 	remove(@Param('id') id: string) {
 		return this.vehiclesService.remove(id)

@@ -28,14 +28,16 @@ export class Vehicle {
 	_id!: string
 
 	@Prop({
+		type: String,
+		ref: 'Brand',
 		required: true,
-		trim: true,
 	})
 	brand!: string
 
 	@Prop({
+		type: String,
+		ref: 'Model',
 		required: true,
-		trim: true,
 	})
 	model!: string
 

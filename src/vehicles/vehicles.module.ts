@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
+import { Model } from 'mongoose'
 import { Booking, BookingSchema } from '../bookings/booking.schema'
+import { Brand, BrandSchema } from '../brands/brand.schema'
 import { Category, CategorySchema } from '../categories/category.schema'
 import { City, CitySchema } from '../cities/city.schema'
+import { ModelSchema } from '../models/model.schema'
 import { Vehicle, VehicleSchema } from './vehicle.schema'
 import { VehiclesController } from './vehicles.controller'
 import { VehiclesService } from './vehicles.service'
@@ -14,6 +17,8 @@ import { VehiclesService } from './vehicles.service'
 			{ name: City.name, schema: CitySchema },
 			{ name: Category.name, schema: CategorySchema },
 			{ name: Booking.name, schema: BookingSchema },
+			{ name: Brand.name, schema: BrandSchema },
+			{ name: Model.name, schema: ModelSchema },
 		]),
 	],
 	controllers: [VehiclesController],

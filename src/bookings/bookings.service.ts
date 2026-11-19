@@ -31,6 +31,13 @@ const ALLOWED_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
 	[BookingStatus.CANCELLED]: [],
 }
 
+interface BookingQuoteInput {
+	vehicleId: string
+	startDate: string
+	endDate: string
+	returnCity?: string
+}
+
 @Injectable()
 export class BookingsService {
 	constructor(
@@ -77,7 +84,149 @@ export class BookingsService {
 			.session(session)
 			.lean()
 
-		return previousBooking ? previousBooking.returnCity : vehicle.city
+		return previousBooking
+			? String(previousBooking.returnCity)
+			: String(vehicle.city)
+	}
+
+	private async getQuoteData(input: BookingQuoteInput, session: ClientSession) {
+		const { vehicleId, startDate, endDate } = input
+		const start = this.normalizeStartDate(startDate)
+		const end = this.normalizeEndDate(endDate)
+		const today = new Date()
+		today.setUTCHours(0, 0, 0, 0)
+
+		if (start < today) {
+			throw new BadRequestException('Start date cannot be in the past')
+		}
+
+		if (start >= end) {
+			throw new BadRequestException(
+				'End date must be on or after the start date',
+			)
+		}
+
+		const vehicle = await this.vehicleModel
+			.findOne({ _id: vehicleId as any, isDeleted: false })
+			.session(session)
+
+		if (!vehicle || !vehicle.isAvailable) {
+			throw new NotFoundException('Vehicle not found or unavailable for rental')
+		}
+
+		const pickupCityId = await this.resolveExpectedPickupCity(
+			vehicle,
+			start,
+			session,
+		)
+		const selectedReturnCityId = input.returnCity || pickupCityId
+		const returnCityExists = await this.cityModel
+			.exists({ _id: selectedReturnCityId as any })
+			.session(session)
+
+		if (!returnCityExists) {
+			throw new NotFoundException('Return city not found')
+		}
+
+		const [overlappingBooking, nextBooking] = await Promise.all([
+			this.bookingModel
+				.findOne({
+					vehicle: vehicleId as any,
+					status: { $in: BLOCKING_STATUSES },
+					startDate: { $lt: end },
+					endDate: { $gt: start },
+				})
+				.session(session)
+				.lean(),
+			this.bookingModel
+				.findOne({
+					vehicle: vehicleId as any,
+					status: { $in: BLOCKING_STATUSES },
+					startDate: { $gte: end },
+				})
+				.sort({ startDate: 1 })
+				.session(session)
+				.lean(),
+		])
+
+		const rentalDays = Math.round((end.getTime() - start.getTime()) / 86400000)
+		const pricePerDay = Number(vehicle.pricePerDay ?? 0)
+		const rentalSubtotal = Number((pricePerDay * rentalDays).toFixed(2))
+		const isOneWay = selectedReturnCityId !== pickupCityId
+
+		const [pickupCity, returnCity, nextPickupCity] = await Promise.all([
+			this.cityModel.findById(pickupCityId).session(session).lean(),
+			this.cityModel.findById(selectedReturnCityId).session(session).lean(),
+			nextBooking
+				? this.cityModel
+						.findById(String(nextBooking.pickupCity))
+						.session(session)
+						.lean()
+				: Promise.resolve(null),
+		])
+
+		const routeFee = isOneWay
+			? await this.oneWayFeeModel
+					.findOne({
+						originCity: pickupCityId as any,
+						destinationCity: selectedReturnCityId as any,
+					})
+					.session(session)
+					.lean()
+			: null
+
+		let error: string | null = null
+
+		if (overlappingBooking) {
+			error =
+				'Vehicle is already booked for one or more dates in the selected range.'
+		} else if (
+			nextBooking &&
+			String(nextBooking.pickupCity) !== selectedReturnCityId
+		) {
+			error =
+				'The return city must match the pickup city of the next scheduled booking.'
+		} else if (isOneWay && !routeFee) {
+			error = 'No one-way fee is configured for this route.'
+		}
+
+		const oneWayFee = routeFee?.fee ?? 0
+		const totalPrice = Number((rentalSubtotal + oneWayFee).toFixed(2))
+
+		return {
+			available: !error,
+			pickupCity: pickupCityId,
+			pickupCityName: pickupCity?.name ?? 'Vehicle Location',
+			returnCity: selectedReturnCityId,
+			returnCityName: returnCity?.name ?? '',
+			rentalDays,
+			pricePerDay,
+			rentalSubtotal,
+			isOneWay,
+			oneWayFee,
+			totalPrice,
+			nextBooking: nextBooking
+				? {
+						startDate: nextBooking.startDate,
+						pickupCity: String(nextBooking.pickupCity),
+						pickupCityName: nextPickupCity?.name ?? 'Unknown city',
+					}
+				: null,
+			error,
+		}
+	}
+
+	async getBookingQuote(input: BookingQuoteInput) {
+		const session = await this.connection.startSession()
+		try {
+			let quote: any
+			await session.withTransaction(async () => {
+				quote = await this.getQuoteData(input, session)
+			})
+			return quote
+		} finally {
+			await session.endSession()
+		}
 	}
 
 	async create(
@@ -104,7 +253,7 @@ export class BookingsService {
 
 		if (start >= end) {
 			throw new BadRequestException(
-				'End date must be strictly after start date',
+				'End date must be on or after the start date',
 			)
 		}
 
@@ -114,10 +263,7 @@ export class BookingsService {
 
 			await session.withTransaction(async () => {
 				const vehicle = await this.vehicleModel
-					.findOne<VehicleDocument>({
-						_id: vehicleId as any,
-						isDeleted: false,
-					})
+					.findOne<VehicleDocument>({ _id: vehicleId as any, isDeleted: false })
 					.session(session)
 
 				if (!vehicle || !vehicle.isAvailable) {
@@ -131,12 +277,9 @@ export class BookingsService {
 					this.userModel.findById(userId).session(session),
 				])
 
-				if (!returnCityExists) {
+				if (!returnCityExists)
 					throw new NotFoundException('Return city not found')
-				}
-				if (!user) {
-					throw new NotFoundException('User not found')
-				}
+				if (!user) throw new NotFoundException('User not found')
 
 				const overlappingBooking = await this.bookingModel
 					.findOne({
@@ -175,16 +318,16 @@ export class BookingsService {
 					.session(session)
 					.lean()
 
-				if (nextBooking && nextBooking.pickupCity !== returnCity) {
+				if (nextBooking && String(nextBooking.pickupCity) !== returnCity) {
 					throw new BadRequestException(
 						'Return city conflicts with a subsequent scheduled booking for this vehicle',
 					)
 				}
 
-				const diffTime = end.getTime() - start.getTime()
-				const rentalDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+				const rentalDays = Math.round(
+					(end.getTime() - start.getTime()) / 86400000,
+				)
 				const isOneWayRental = returnCity !== expectedPickupCity
-
 				const routeFee = isOneWayRental
 					? await this.oneWayFeeModel
 							.findOne({
@@ -231,7 +374,12 @@ export class BookingsService {
 	async getUserBookings(userId: string): Promise<Booking[]> {
 		return this.bookingModel
 			.find({ user: userId as any })
-			.populate(['vehicle', 'pickupCity', 'returnCity'])
+			.populate({
+				path: 'vehicle',
+				populate: [{ path: 'brand' }, { path: 'model' }, { path: 'category' }],
+			})
+			.populate('pickupCity')
+			.populate('returnCity')
 			.sort({ createdAt: -1 })
 			.exec()
 	}
@@ -240,7 +388,12 @@ export class BookingsService {
 		return this.bookingModel
 			.find()
 			.populate('user', 'name email phoneNumber')
-			.populate(['vehicle', 'pickupCity', 'returnCity'])
+			.populate({
+				path: 'vehicle',
+				populate: [{ path: 'brand' }, { path: 'model' }, { path: 'category' }],
+			})
+			.populate('pickupCity')
+			.populate('returnCity')
 			.sort({ createdAt: -1 })
 			.exec()
 	}
@@ -250,14 +403,10 @@ export class BookingsService {
 		updateBookingStatusDto: UpdateBookingStatusDto,
 	): Promise<Booking> {
 		const booking = await this.bookingModel.findById(id)
-		if (!booking) {
-			throw new NotFoundException(`Booking with ID ${id} not found`)
-		}
+		if (!booking) throw new NotFoundException(`Booking with ID ${id} not found`)
 
 		const nextStatus = updateBookingStatusDto.status
-		if (booking.status === nextStatus) {
-			return booking
-		}
+		if (booking.status === nextStatus) return booking
 
 		const allowed = ALLOWED_TRANSITIONS[booking.status] ?? []
 		if (!allowed.includes(nextStatus)) {
@@ -275,14 +424,12 @@ export class BookingsService {
 				)
 			}
 
-			if (booking.pickupCity !== booking.returnCity) {
+			if (String(booking.pickupCity) !== String(booking.returnCity)) {
 				const vehicle = await this.vehicleModel.findOne<VehicleDocument>({
 					_id: booking.vehicle as any,
 					isDeleted: false,
 				})
-				if (!vehicle) {
-					throw new NotFoundException('Vehicle not found')
-				}
+				if (!vehicle) throw new NotFoundException('Vehicle not found')
 				vehicle.city = booking.returnCity
 				await vehicle.save()
 			}
@@ -294,11 +441,9 @@ export class BookingsService {
 
 	async cancelBooking(id: string, userId: string): Promise<Booking> {
 		const booking = await this.bookingModel.findById(id)
-		if (!booking) {
-			throw new NotFoundException(`Booking with ID ${id} not found`)
-		}
+		if (!booking) throw new NotFoundException(`Booking with ID ${id} not found`)
 
-		if (booking.user !== userId) {
+		if (String(booking.user) !== String(userId)) {
 			throw new ForbiddenException('You can only cancel your own bookings')
 		}
 
@@ -317,9 +462,7 @@ export class BookingsService {
 
 	async deleteBooking(id: string): Promise<{ message: string }> {
 		const booking = await this.bookingModel.findByIdAndDelete(id)
-		if (!booking) {
-			throw new NotFoundException(`Booking with ID ${id} not found`)
-		}
+		if (!booking) throw new NotFoundException(`Booking with ID ${id} not found`)
 		return { message: 'Booking successfully deleted' }
 	}
 }

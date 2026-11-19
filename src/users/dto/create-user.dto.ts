@@ -69,15 +69,6 @@ export class CreateUserDto {
 	city?: string
 
 	@ApiPropertyOptional({
-		example: 'Khreshchatyk st. 1',
-		description: 'Address',
-	})
-	@IsOptional()
-	@IsString()
-	@MaxLength(255)
-	address?: string
-
-	@ApiPropertyOptional({
 		type: 'string',
 		format: 'binary',
 		description: 'Avatar image file',

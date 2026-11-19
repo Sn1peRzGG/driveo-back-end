@@ -35,13 +35,13 @@ export class CategoriesController {
 	constructor(private readonly categoriesService: CategoriesService) {}
 
 	@UseGuards(JwtAuthGuard, RolesGuard)
-	@Roles('ADMIN')
+	@Roles('FLEET_ADMIN')
 	@ApiBearerAuth()
 	@Post()
 	@HttpCode(HttpStatus.CREATED)
 	@UseInterceptors(FileInterceptor('file', multerImageOptions))
 	@ApiConsumes('multipart/form-data')
-	@ApiOperation({ summary: 'Create a new category (Admin only)' })
+	@ApiOperation({ summary: 'Create a new category (Fleet admin and higher)' })
 	@ApiResponse({ status: 201, description: 'Category successfully created.' })
 	@ApiResponse({
 		status: 400,
@@ -78,12 +78,12 @@ export class CategoriesController {
 	}
 
 	@UseGuards(JwtAuthGuard, RolesGuard)
-	@Roles('ADMIN')
+	@Roles('FLEET_ADMIN')
 	@ApiBearerAuth()
 	@Patch(':id')
 	@UseInterceptors(FileInterceptor('file', multerImageOptions))
 	@ApiConsumes('multipart/form-data')
-	@ApiOperation({ summary: 'Update category by ID (Admin only)' })
+	@ApiOperation({ summary: 'Update category by ID (Fleet admin and higher)' })
 	@ApiResponse({ status: 200, description: 'Category successfully updated.' })
 	@ApiResponse({ status: 404, description: 'Category not found.' })
 	update(
@@ -95,10 +95,10 @@ export class CategoriesController {
 	}
 
 	@UseGuards(JwtAuthGuard, RolesGuard)
-	@Roles('ADMIN')
+	@Roles('FLEET_ADMIN')
 	@ApiBearerAuth()
 	@Delete(':id')
-	@ApiOperation({ summary: 'Delete category by ID (Admin only)' })
+	@ApiOperation({ summary: 'Delete category by ID (Fleet admin and higher)' })
 	@ApiResponse({ status: 200, description: 'Category successfully deleted.' })
 	@ApiResponse({ status: 404, description: 'Category not found.' })
 	remove(@Param('id') id: string) {

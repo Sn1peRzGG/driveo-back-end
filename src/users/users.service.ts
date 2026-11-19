@@ -22,6 +22,17 @@ export class UsersService {
 		@InjectModel(User.name) private readonly userModel: Model<UserDocument>,
 	) {}
 
+	private readonly savedVehiclesPopulate = {
+		path: 'savedVehicles',
+		match: { isDeleted: false },
+		populate: [
+			{ path: 'brand' },
+			{ path: 'model' },
+			{ path: 'category' },
+			{ path: 'city' },
+		],
+	}
+
 	private readonly uploadPath = join(process.cwd(), 'public', 'users')
 
 	private async saveFile(file: Express.Multer.File) {
@@ -100,10 +111,7 @@ export class UsersService {
 	async findOne(id: string) {
 		const user = await this.userModel
 			.findById(id)
-			.populate({
-				path: 'savedVehicles',
-				match: { isDeleted: false },
-			})
+			.populate(this.savedVehiclesPopulate)
 			.lean()
 
 		if (!user) throw new NotFoundException('User not found')
@@ -208,9 +216,9 @@ export class UsersService {
 		const updated = await this.userModel
 			.findByIdAndUpdate(id, update, { returnDocument: 'after' })
 			.select('savedVehicles')
-			.populate('savedVehicles')
+			.populate(this.savedVehiclesPopulate)
 			.lean()
 
-		return updated?.savedVehicles || []
+		return (updated?.savedVehicles || []).filter(item => item !== null)
 	}
 }

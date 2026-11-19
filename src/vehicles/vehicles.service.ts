@@ -41,7 +41,7 @@ export class VehiclesService {
 
 	private readonly uploadPath = join(process.cwd(), 'public', 'vehicles')
 
-	private toResponse(vehicle: any) {
+	private toResponse(this: void, vehicle: any) {
 		const source = vehicle?.toObject ? vehicle.toObject() : vehicle
 		const reference = (value: any) =>
 			typeof value === 'string'

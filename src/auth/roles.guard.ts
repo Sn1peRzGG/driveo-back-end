@@ -12,10 +12,14 @@ interface RequestWithUser extends express.Request {
 	user?: UserPayload
 }
 
-const ROLE_HIERARCHY: Record<string, string[]> = {
+type UserRole = 'USER' | 'ADMIN' | 'FLEET_ADMIN' | 'SYSADMIN' | 'OWNER'
+
+const ROLE_HIERARCHY: Record<UserRole, UserRole[]> = {
 	USER: ['USER'],
-	ADMIN: ['ADMIN', 'USER'],
-	OWNER: ['OWNER', 'ADMIN', 'USER'],
+	ADMIN: ['ADMIN', 'USER'], // Rent manager (cars, reservations, payments)
+	FLEET_ADMIN: ['FLEET_ADMIN', 'ADMIN', 'USER'], // Fleet manager (brands, models, categories, cities, fees)
+	SYSADMIN: ['SYSADMIN', 'FLEET_ADMIN', 'ADMIN', 'USER'], // System administrator (logs, settings)
+	OWNER: ['OWNER', 'SYSADMIN', 'FLEET_ADMIN', 'ADMIN', 'USER'], // Full access
 }
 
 @Injectable()

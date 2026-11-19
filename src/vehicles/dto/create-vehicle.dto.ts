@@ -17,21 +17,17 @@ import { FuelType, Transmission } from '../vehicle.schema'
 
 export class CreateVehicleDto {
 	@ApiProperty({
-		example: 'Toyota',
-		description: 'Vehicle brand',
+		example: '123e4567-e89b-12d3-a456-426614174000',
+		description: 'Brand UUIDv4 ID',
 	})
 	@IsString()
-	@MinLength(2)
-	@MaxLength(60)
 	brand!: string
 
 	@ApiProperty({
-		example: 'Camry',
-		description: 'Vehicle model',
+		example: '123e4567-e89b-12d3-a456-426614174000',
+		description: 'Model UUIDv4 ID',
 	})
 	@IsString()
-	@MinLength(1)
-	@MaxLength(60)
 	model!: string
 
 	@ApiProperty({

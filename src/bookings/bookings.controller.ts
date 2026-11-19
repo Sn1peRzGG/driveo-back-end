@@ -7,6 +7,7 @@ import {
 	ParseUUIDPipe,
 	Patch,
 	Post,
+	Query,
 	Req,
 	UseGuards,
 } from '@nestjs/common'
@@ -41,22 +42,37 @@ export class BookingsController {
 		@Body() createBookingDto: CreateBookingDto,
 		@Req() req: any,
 	) {
-		const userId = req.user._id
-		return this.bookingsService.create(createBookingDto, userId)
+		return this.bookingsService.create(createBookingDto, req.user._id)
+	}
+
+	@Get('quote')
+	@ApiOperation({ summary: 'Get booking availability and price quote' })
+	@ApiResponse({ status: 200, description: 'Booking quote calculated.' })
+	async getBookingQuote(
+		@Query('vehicleId') vehicleId: string,
+		@Query('startDate') startDate: string,
+		@Query('endDate') endDate: string,
+		@Query('returnCity') returnCity?: string,
+	) {
+		return this.bookingsService.getBookingQuote({
+			vehicleId,
+			startDate,
+			endDate,
+			returnCity,
+		})
 	}
 
 	@Get('my')
 	@ApiOperation({ summary: 'Get current user bookings' })
 	@ApiResponse({ status: 200, description: 'Bookings list retrieved.' })
 	async getMyBookings(@Req() req: any) {
-		const userId = req.user._id
-		return this.bookingsService.getUserBookings(userId)
+		return this.bookingsService.getUserBookings(req.user._id)
 	}
 
 	@Get()
 	@UseGuards(RolesGuard)
 	@Roles('ADMIN')
-	@ApiOperation({ summary: 'Get all bookings (Admin only)' })
+	@ApiOperation({ summary: 'Get all bookings (Admin or higher)' })
 	@ApiResponse({ status: 200, description: 'All bookings retrieved.' })
 	async getAllBookings() {
 		return this.bookingsService.getAllBookings()
@@ -65,7 +81,7 @@ export class BookingsController {
 	@Patch(':id/status')
 	@UseGuards(RolesGuard)
 	@Roles('ADMIN')
-	@ApiOperation({ summary: 'Update booking status (Admin only)' })
+	@ApiOperation({ summary: 'Update booking status (Admin or higher)' })
 	@ApiResponse({ status: 200, description: 'Status updated.' })
 	async updateStatus(
 		@Param('id', new ParseUUIDPipe()) id: string,
@@ -81,14 +97,13 @@ export class BookingsController {
 		@Param('id', new ParseUUIDPipe()) id: string,
 		@Req() req: any,
 	) {
-		const userId = req.user._id
-		return this.bookingsService.cancelBooking(id, userId)
+		return this.bookingsService.cancelBooking(id, req.user._id)
 	}
 
 	@Delete(':id')
 	@UseGuards(RolesGuard)
 	@Roles('ADMIN')
-	@ApiOperation({ summary: 'Delete booking from database (Admin only)' })
+	@ApiOperation({ summary: 'Delete booking from database (Admin or higher)' })
 	@ApiResponse({ status: 200, description: 'Booking deleted.' })
 	async deleteBooking(@Param('id', new ParseUUIDPipe()) id: string) {
 		return this.bookingsService.deleteBooking(id)

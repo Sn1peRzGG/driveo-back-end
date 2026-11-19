@@ -35,6 +35,28 @@ export class OneWayFeesService {
 			.populate(['originCity', 'destinationCity'])
 	}
 
+	async findByRoute(
+		originCityId: string,
+		destinationCityId: string,
+	): Promise<{ fee: number }> {
+		if (originCityId === destinationCityId) {
+			return { fee: 0 }
+		}
+
+		const routeFee = await this.feeModel
+			.findOne({
+				originCity: originCityId,
+				destinationCity: destinationCityId,
+			})
+			.lean()
+
+		if (!routeFee) {
+			throw new NotFoundException('No one-way fee is configured for this route')
+		}
+
+		return { fee: routeFee.fee }
+	}
+
 	findAll() {
 		return this.feeModel
 			.find()

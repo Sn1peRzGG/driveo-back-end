@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common'
+import {
+	Body,
+	Controller,
+	Get,
+	ParseUUIDPipe,
+	Post,
+	Query,
+	UseGuards,
+} from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 import { Roles } from '../auth/roles.decorator'
@@ -19,10 +27,21 @@ export class OneWayFeesController {
 
 	@Post()
 	@UseGuards(JwtAuthGuard, RolesGuard)
-	@Roles('ADMIN')
+	@Roles('FLEET_ADMIN')
 	@ApiBearerAuth()
-	@ApiOperation({ summary: 'Create or update a one-way fee (Admin only)' })
+	@ApiOperation({
+		summary: 'Create or update a one-way fee (Fleet admin and higher)',
+	})
 	create(@Body() dto: CreateOneWayFeeDto) {
 		return this.oneWayFeesService.create(dto)
+	}
+
+	@Get('calculate')
+	@ApiOperation({ summary: 'Get one-way fee between two cities' })
+	calculateFee(
+		@Query('originCityId', new ParseUUIDPipe()) originCityId: string,
+		@Query('destinationCityId', new ParseUUIDPipe()) destinationCityId: string,
+	) {
+		return this.oneWayFeesService.findByRoute(originCityId, destinationCityId)
 	}
 }

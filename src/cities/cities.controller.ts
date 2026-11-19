@@ -6,7 +6,7 @@ import { RolesGuard } from '../auth/roles.guard'
 import { CitiesService } from './cities.service'
 import { CreateCityDto } from './dto/create-city.dto'
 
-@ApiTags('Cities')
+@ApiTags('Brands')
 @Controller('cities')
 export class CitiesController {
 	constructor(private readonly citiesService: CitiesService) {}
@@ -25,9 +25,9 @@ export class CitiesController {
 
 	@Post()
 	@UseGuards(JwtAuthGuard, RolesGuard)
-	@Roles('ADMIN')
+	@Roles('FLEET_ADMIN')
 	@ApiBearerAuth()
-	@ApiOperation({ summary: 'Create a city (Admin only)' })
+	@ApiOperation({ summary: 'Create a city (Fleet admin and higher)' })
 	create(@Body() dto: CreateCityDto) {
 		return this.citiesService.create(dto)
 	}

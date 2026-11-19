@@ -13,11 +13,11 @@ export class VehicleResponseDto {
 	@ApiProperty()
 	_id!: string
 
-	@ApiProperty()
-	brand!: string
+	@ApiProperty({ type: VehicleReferenceDto })
+	brand!: VehicleReferenceDto
 
-	@ApiProperty()
-	model!: string
+	@ApiProperty({ type: VehicleReferenceDto })
+	model!: VehicleReferenceDto
 
 	@ApiProperty()
 	year!: number
