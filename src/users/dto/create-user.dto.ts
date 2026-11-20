@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import {
+	IsDateString,
 	IsEmail,
+	IsNotEmpty,
 	IsOptional,
 	IsPhoneNumber,
 	IsString,
@@ -49,6 +51,21 @@ export class CreateUserDto {
 	@MinLength(2)
 	@MaxLength(50)
 	lastName!: string
+
+	@ApiProperty({
+		example: '2005-06-15T00:00:00.000Z',
+		description: 'Birth date (must be at least 18 years old)',
+	})
+	@IsDateString(
+		{},
+		{
+			message: 'Invalid birth date format',
+		},
+	)
+	@IsNotEmpty({
+		message: 'Birth date is required',
+	})
+	birthDate!: string
 
 	@ApiProperty({
 		example: '+491711234567',

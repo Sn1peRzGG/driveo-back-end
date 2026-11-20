@@ -43,6 +43,12 @@ export class User {
 
 	@Prop({
 		required: true,
+		type: Date,
+	})
+	birthDate!: Date
+
+	@Prop({
+		required: true,
 		unique: true,
 	})
 	phoneNumber!: string

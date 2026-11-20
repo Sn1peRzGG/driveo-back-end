@@ -3,6 +3,8 @@ import {
 	Controller,
 	Delete,
 	Get,
+	HttpCode,
+	HttpStatus,
 	Post,
 	Req,
 	Res,
@@ -16,6 +18,11 @@ import {
 	ApiTags,
 } from '@nestjs/swagger'
 import * as express from 'express'
+import {
+	jwtCookieClearOptions,
+	jwtCookieOptions,
+} from '../common/config/cookie.config'
+import { CreateUserDto } from '../users/dto/create-user.dto'
 import { UsersService } from '../users/users.service'
 import { AuthService } from './auth.service'
 import { LoginDto } from './dto/login.dto'
@@ -54,15 +61,30 @@ export class AuthController {
 		if (!user) {
 			throw new UnauthorizedException()
 		}
-		const tokenData = this.authService.login(user)
-		res.cookie('jwt', tokenData.access_token, {
-			httpOnly: true,
-			secure: process.env.NODE_ENV === 'production',
-			sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-			path: '/',
-			maxAge: 7 * 24 * 60 * 60 * 1000,
-		})
+		const tokenData = this.authService.generateToken(user)
+
+		res.cookie('jwt', tokenData.access_token, jwtCookieOptions)
 		return { message: 'Successfully logged in' }
+	}
+
+	@Post('signup')
+	@HttpCode(HttpStatus.CREATED)
+	@ApiOperation({ summary: 'Register a new user and set JWT cookie' })
+	@ApiResponse({
+		status: 201,
+		description: 'User successfully created and logged in.',
+	})
+	@ApiResponse({ status: 400, description: 'Validation failed.' })
+	@ApiResponse({ status: 409, description: 'Email or phone already exists.' })
+	async signup(
+		@Body() dto: CreateUserDto,
+		@Res({ passthrough: true }) res: express.Response,
+	) {
+		const { user, access_token } = await this.authService.signup(dto)
+
+		res.cookie('jwt', access_token, jwtCookieOptions)
+
+		return { message: 'Successfully registered and logged in', user }
 	}
 
 	@Post('logout')
@@ -71,12 +93,7 @@ export class AuthController {
 	logout(@Res({ passthrough: true }) res: express.Response): {
 		message: string
 	} {
-		res.clearCookie('jwt', {
-			httpOnly: true,
-			secure: process.env.NODE_ENV === 'production',
-			sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-			path: '/',
-		})
+		res.clearCookie('jwt', jwtCookieClearOptions)
 		return { message: 'Logged out' }
 	}
 
@@ -102,7 +119,7 @@ export class AuthController {
 	) {
 		await this.usersService.removeMe(req.user._id, req.user.role)
 
-		res.clearCookie('jwt')
+		res.clearCookie('jwt', jwtCookieClearOptions)
 		return { success: true, message: 'Account permanently deleted' }
 	}
 }
