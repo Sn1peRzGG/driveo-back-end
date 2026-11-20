@@ -51,7 +51,7 @@ export class CreateUserDto {
 	lastName!: string
 
 	@ApiProperty({
-		example: '+380971234567',
+		example: '+491711234567',
 		description: 'Phone number',
 	})
 	@IsPhoneNumber(undefined, {
@@ -60,7 +60,7 @@ export class CreateUserDto {
 	phoneNumber!: string
 
 	@ApiPropertyOptional({
-		example: 'Kyiv',
+		example: 'Berlin',
 		description: 'City',
 	})
 	@IsOptional()

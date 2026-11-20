@@ -56,7 +56,7 @@ export class CreateBookingDto {
 	returnCity!: string
 
 	@ApiProperty({
-		example: '+380971234567',
+		example: '+491711234567',
 		description: 'Contact phone number',
 	})
 	@IsString()

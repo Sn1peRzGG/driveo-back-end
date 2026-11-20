@@ -37,9 +37,9 @@ export class DevelopmentSeedService implements OnApplicationBootstrap {
 			{ $setOnInsert: { name: 'Berlin' } },
 			{ new: true, upsert: true },
 		)
-		const kyiv = await this.cityModel.findOneAndUpdate(
-			{ name: 'Kyiv' },
-			{ $setOnInsert: { name: 'Kyiv' } },
+		const stuttgart = await this.cityModel.findOneAndUpdate(
+			{ name: 'Stuttgart' },
+			{ $setOnInsert: { name: 'Stuttgart' } },
 			{ new: true, upsert: true },
 		)
 		const sedan = await this.categoryModel.findOneAndUpdate(
@@ -55,11 +55,11 @@ export class DevelopmentSeedService implements OnApplicationBootstrap {
 		)
 
 		await this.oneWayFeeModel.findOneAndUpdate(
-			{ originCity: berlin._id, destinationCity: kyiv._id },
+			{ originCity: berlin._id, destinationCity: stuttgart._id },
 			{
 				$setOnInsert: {
 					originCity: berlin._id,
-					destinationCity: kyiv._id,
+					destinationCity: stuttgart._id,
 					fee: 75,
 				},
 			},
@@ -98,7 +98,7 @@ export class DevelopmentSeedService implements OnApplicationBootstrap {
 					password: await bcrypt.hash('OwnerPass123', 10),
 					firstName: 'Driveo',
 					lastName: 'Owner',
-					phoneNumber: '+380501234567',
+					phoneNumber: '+491711234567',
 					role: 'OWNER',
 				},
 			} as any,
