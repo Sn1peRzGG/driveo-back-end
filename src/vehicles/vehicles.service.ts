@@ -337,7 +337,7 @@ export class VehiclesService {
 					})),
 					cities: availableCities.map(c => ({ _id: c._id, name: c.name })),
 					transmissions: availableTransmissions,
-					fuelTypes: (metaData.fuelTypes || []).sort(),
+					fuelTypes: availableFuelTypes,
 					seats: availableSeats,
 				},
 			},
