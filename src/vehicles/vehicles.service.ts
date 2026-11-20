@@ -9,15 +9,17 @@ import { InjectModel } from '@nestjs/mongoose'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync } from 'fs'
 import * as fs from 'fs/promises'
-import { Model } from 'mongoose'
+import { Model as MongooseModel } from 'mongoose'
 import { extname, join } from 'path'
 import {
 	Booking,
 	BookingDocument,
 	BookingStatus,
 } from '../bookings/booking.schema'
+import { Brand, BrandDocument } from '../brands/brand.schema'
 import { Category, CategoryDocument } from '../categories/category.schema'
 import { City, CityDocument } from '../cities/city.schema'
+import { Model, ModelDocument } from '../models/model.schema'
 import { CreateVehicleDto } from './dto/create-vehicle.dto'
 import { UpdateVehicleDto } from './dto/update-vehicle.dto'
 import { Vehicle, VehicleDocument } from './vehicle.schema'
@@ -26,12 +28,17 @@ import { Vehicle, VehicleDocument } from './vehicle.schema'
 export class VehiclesService {
 	constructor(
 		@InjectModel(Vehicle.name)
-		private readonly vehicleModel: Model<VehicleDocument>,
-		@InjectModel(City.name) private readonly cityModel: Model<CityDocument>,
+		private readonly vehicleModel: MongooseModel<VehicleDocument>,
+		@InjectModel(City.name)
+		private readonly cityModel: MongooseModel<CityDocument>,
 		@InjectModel(Category.name)
-		private readonly categoryModel: Model<CategoryDocument>,
+		private readonly categoryModel: MongooseModel<CategoryDocument>,
 		@InjectModel(Booking.name)
-		private readonly bookingModel: Model<BookingDocument>,
+		private readonly bookingModel: MongooseModel<BookingDocument>,
+		@InjectModel(Brand.name)
+		private readonly brandModel: MongooseModel<BrandDocument>,
+		@InjectModel(Model.name)
+		private readonly modelModel: MongooseModel<ModelDocument>,
 	) {}
 
 	private async ensureCityExists(cityId: string): Promise<void> {
@@ -44,14 +51,16 @@ export class VehiclesService {
 	private toResponse(this: void, vehicle: any) {
 		const source = vehicle?.toObject ? vehicle.toObject() : vehicle
 		const reference = (value: any) =>
-			typeof value === 'string'
-				? { _id: value, name: '' }
-				: { _id: value._id, name: value.name }
+			!value
+				? { _id: '', name: '' }
+				: typeof value === 'string'
+					? { _id: value, name: '' }
+					: { _id: value._id, name: value.name }
 
 		return {
 			_id: source._id,
-			brand: source.brand,
-			model: source.model,
+			brand: reference(source.brand),
+			model: reference(source.model),
 			year: source.year,
 			description: source.description,
 			images: source.images ?? [],
@@ -119,7 +128,9 @@ export class VehiclesService {
 				isDeleted: false,
 			} as any)
 
-			return this.toResponse(await vehicle.populate(['category', 'city']))
+			return this.toResponse(
+				await vehicle.populate(['brand', 'model', 'category', 'city']),
+			)
 		} catch {
 			for (const img of savedImages) {
 				await this.deleteFile(img)
@@ -133,7 +144,7 @@ export class VehiclesService {
 	async findAll() {
 		const vehicles = await this.vehicleModel
 			.find({ isDeleted: false })
-			.populate(['category', 'city'])
+			.populate(['brand', 'model', 'category', 'city'])
 			.sort({ createdAt: -1 })
 			.lean()
 		return vehicles.map(vehicle => this.toResponse(vehicle))
@@ -149,6 +160,7 @@ export class VehiclesService {
 
 	async search(
 		brand?: string,
+		model?: string,
 		category?: string,
 		city?: string,
 		page: number = 1,
@@ -169,10 +181,12 @@ export class VehiclesService {
 
 		const brands = this.parseCommaList(brand)
 		if (brands.length > 0) {
-			const escapedBrands = brands.map(
-				b => new RegExp(b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
-			)
-			filter.brand = { $in: escapedBrands }
+			filter.brand = { $in: brands }
+		}
+
+		const models = this.parseCommaList(model)
+		if (models.length > 0) {
+			filter.model = { $in: models }
 		}
 
 		const categories = this.parseCommaList(category)
@@ -256,6 +270,7 @@ export class VehiclesService {
 					minYear: { $min: '$year' },
 					maxYear: { $max: '$year' },
 					brands: { $addToSet: '$brand' },
+					models: { $addToSet: '$model' },
 					categories: { $addToSet: '$category' },
 					cities: { $addToSet: '$city' },
 					transmissions: { $addToSet: '$transmission' },
@@ -280,19 +295,23 @@ export class VehiclesService {
 		const globalMinYear = metaData.minYear ?? 2000
 		const globalMaxYear = metaData.maxYear ?? new Date().getFullYear()
 
-		const availableBrands = (metaData.brands || []).sort()
 		const availableTransmissions = (metaData.transmissions || []).sort()
 		const availableFuelTypes = (metaData.fuelTypes || []).sort()
 		const availableSeats = (metaData.seats || []).sort(
 			(a: number, b: number) => a - b,
 		)
 
-		const [availableCategories, availableCities] = await Promise.all([
+		const [
+			availableBrands,
+			availableModels,
+			availableCategories,
+			availableCities,
+		] = await Promise.all([
+			this.brandModel.find({ _id: { $in: metaData.brands || [] } }).lean(),
+			this.modelModel.find({ _id: { $in: metaData.models || [] } }).lean(),
 			this.categoryModel
-				? this.categoryModel
-						.find({ _id: { $in: metaData.categories || [] } })
-						.lean()
-				: [],
+				.find({ _id: { $in: metaData.categories || [] } })
+				.lean(),
 			this.cityModel.find({ _id: { $in: metaData.cities || [] } }).lean(),
 		])
 
@@ -312,7 +331,7 @@ export class VehiclesService {
 
 		const data = await this.vehicleModel
 			.find(filter)
-			.populate(['category', 'city'])
+			.populate(['brand', 'model', 'category', 'city'])
 			.sort(sortObject)
 			.skip((page - 1) * limit)
 			.limit(limit)
@@ -330,7 +349,8 @@ export class VehiclesService {
 				minYear: globalMinYear,
 				maxYear: globalMaxYear,
 				options: {
-					brands: availableBrands,
+					brands: availableBrands.map(b => ({ _id: b._id, name: b.name })),
+					models: availableModels.map(m => ({ _id: m._id, name: m.name })),
 					categories: availableCategories.map(c => ({
 						_id: c._id,
 						name: c.name,
@@ -347,7 +367,7 @@ export class VehiclesService {
 	async findOne(id: string) {
 		const vehicle = await this.vehicleModel
 			.findOne({ _id: id, isDeleted: false } as any)
-			.populate(['category', 'city'])
+			.populate(['brand', 'model', 'category', 'city'])
 			.lean()
 		if (!vehicle) throw new NotFoundException({ message: 'Vehicle not found' })
 		return this.toResponse(vehicle)
@@ -421,7 +441,7 @@ export class VehiclesService {
 					{ $set: updateData },
 					{ returnDocument: 'after' },
 				)
-				.populate(['category', 'city'])
+				.populate(['brand', 'model', 'category', 'city'])
 
 			for (const oldImg of imagesToDelete) {
 				await this.deleteFile(oldImg)
@@ -436,6 +456,28 @@ export class VehiclesService {
 				message: 'Failed to update vehicle',
 			})
 		}
+	}
+
+	async findAllBrands() {
+		return this.brandModel
+			.find({
+				_id: {
+					$in: await this.vehicleModel.distinct('brand', { isDeleted: false }),
+				},
+			} as any)
+			.sort({ name: 1 })
+			.lean()
+	}
+
+	async findAllModels() {
+		return this.modelModel
+			.find({
+				_id: {
+					$in: await this.vehicleModel.distinct('model', { isDeleted: false }),
+				},
+			} as any)
+			.sort({ name: 1 })
+			.lean()
 	}
 
 	async findAllCities() {
