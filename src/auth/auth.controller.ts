@@ -17,7 +17,7 @@ import {
 	ApiResponse,
 	ApiTags,
 } from '@nestjs/swagger'
-import * as express from 'express'
+import type { Request, Response } from 'express'
 import {
 	jwtCookieClearOptions,
 	jwtCookieOptions,
@@ -34,7 +34,7 @@ interface UserPayload {
 	role: string
 }
 
-interface RequestWithUser extends express.Request {
+interface RequestWithUser extends Request {
 	user: UserPayload
 }
 
@@ -52,7 +52,7 @@ export class AuthController {
 	@ApiResponse({ status: 401, description: 'Invalid credentials.' })
 	async login(
 		@Body() loginDto: LoginDto,
-		@Res({ passthrough: true }) res: express.Response,
+		@Res({ passthrough: true }) res: Response,
 	): Promise<{ message: string }> {
 		const user = await this.authService.validateUser(
 			loginDto.email,
@@ -78,7 +78,7 @@ export class AuthController {
 	@ApiResponse({ status: 409, description: 'Email or phone already exists.' })
 	async signup(
 		@Body() dto: CreateUserDto,
-		@Res({ passthrough: true }) res: express.Response,
+		@Res({ passthrough: true }) res: Response,
 	) {
 		const { user, access_token } = await this.authService.signup(dto)
 
@@ -90,7 +90,7 @@ export class AuthController {
 	@Post('logout')
 	@ApiOperation({ summary: 'Clear JWT cookie and logout' })
 	@ApiResponse({ status: 201, description: 'Successfully logged out.' })
-	logout(@Res({ passthrough: true }) res: express.Response): {
+	logout(@Res({ passthrough: true }) res: Response): {
 		message: string
 	} {
 		res.clearCookie('jwt', jwtCookieClearOptions)
@@ -115,7 +115,7 @@ export class AuthController {
 	@ApiResponse({ status: 401, description: 'Unauthorized.' })
 	async deleteMe(
 		@Req() req: RequestWithUser,
-		@Res({ passthrough: true }) res: express.Response,
+		@Res({ passthrough: true }) res: Response,
 	) {
 		await this.usersService.removeMe(req.user._id, req.user.role)
 

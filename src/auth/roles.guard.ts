@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
-import * as express from 'express'
+import type { Request } from 'express'
 
 interface UserPayload {
 	_id: string
@@ -8,7 +8,7 @@ interface UserPayload {
 	role: string
 }
 
-interface RequestWithUser extends express.Request {
+interface RequestWithUser extends Request {
 	user?: UserPayload
 }
 

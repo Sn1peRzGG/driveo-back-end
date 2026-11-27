@@ -4,16 +4,19 @@ import { MongooseModule } from '@nestjs/mongoose'
 import { AuthModule } from './auth/auth.module'
 import { BookingsModule } from './bookings/bookings.module'
 import { CategoriesModule } from './categories/categories.module'
-import { CitiesModule } from './cities/cities.module'
-import { OneWayFeesModule } from './one-way-fees/one-way-fees.module'
-import { UsersModule } from './users/users.module'
-import { VehiclesModule } from './vehicles/vehicles.module'
-import { DevelopmentSeedService } from './common/seed/development-seed.service'
-import { City, CitySchema } from './cities/city.schema'
 import { Category, CategorySchema } from './categories/category.schema'
-import { Vehicle, VehicleSchema } from './vehicles/vehicle.schema'
+import { CitiesModule } from './cities/cities.module'
+import { City, CitySchema } from './cities/city.schema'
+import { DevelopmentSeedService } from './common/seed/development-seed.service'
+import { ContactsModule } from './contacts/contacts.module'
 import { OneWayFee, OneWayFeeSchema } from './one-way-fees/one-way-fee.schema'
+import { OneWayFeesModule } from './one-way-fees/one-way-fees.module'
 import { User, UserSchema } from './users/user.schema'
+import { UsersModule } from './users/users.module'
+import { Vehicle, VehicleSchema } from './vehicles/vehicle.schema'
+import { VehiclesModule } from './vehicles/vehicles.module'
+import { BrandsModule } from './brands/brands.module'
+import { ModelsModule } from './models/models.module'
 
 @Module({
 	imports: [
@@ -41,6 +44,9 @@ import { User, UserSchema } from './users/user.schema'
 		OneWayFeesModule,
 		VehiclesModule,
 		BookingsModule,
+		ContactsModule,
+		BrandsModule,
+		ModelsModule,
 	],
 	providers: [DevelopmentSeedService],
 })

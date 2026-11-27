@@ -1,6 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common'
 import { ConfigModule, ConfigService } from '@nestjs/config'
-import { JwtModule } from '@nestjs/jwt'
+import { JwtModule, type JwtSignOptions } from '@nestjs/jwt'
 import { PassportModule } from '@nestjs/passport'
 import { UsersModule } from '../users/users.module'
 import { AuthController } from './auth.controller'
@@ -21,7 +21,7 @@ import { JwtStrategy } from './jwt.strategy'
 					expiresIn: configService.get<string>(
 						'JWT_EXPIRES_IN',
 						'7d',
-					) as import('jsonwebtoken').SignOptions['expiresIn'],
+					) as JwtSignOptions['expiresIn'],
 				},
 			}),
 		}),
